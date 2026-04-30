@@ -1,0 +1,927 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gamification Admin Platform</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
+        * { box-sizing: border-box; }
+        body { font-family: 'Outfit', sans-serif; background: #f8fafc; color: #0f172a; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+        .glass-card { background: #16284e;; backdrop-filter: blur(16px); }
+        .kpi-card { transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease; }
+        .kpi-card:hover { transform: translateY(-3px); box-shadow: 0 18px 35px -25px rgba(15, 23, 42, .45); border-color: #bfdbfe; }
+        .calendar-cell { min-height: 128px; }
+        .quest-pill { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .modal-backdrop { background: rgba(15, 23, 42, .62); backdrop-filter: blur(5px); }
+        .status-dot { width: 9px; height: 9px; border-radius: 999px; display: inline-block; }
+        input[type="date"]::-webkit-calendar-picker-indicator { cursor: pointer; }
+    </style>
+</head>
+<body>
+<div class="flex h-screen overflow-hidden">
+    <main class="flex-1 overflow-y-auto custom-scrollbar bg-slate-50">
+        <section id="overview" class="relative overflow-hidden bg-gradient-to-br from-slate-950 via-blue-950 to-slate-900 text-white">
+            <div class="absolute inset-0 opacity-20" style="background-image: radial-gradient(circle at 15% 20%, #38bdf8 0, transparent 26%), radial-gradient(circle at 85% 5%, #f59e0b 0, transparent 22%), radial-gradient(circle at 70% 80%, #22c55e 0, transparent 24%);"></div>
+            <div class="relative max-w-7xl mx-auto px-5 sm:px-8 pt-8 pb-12">
+                <div class="flex flex-col xl:flex-row justify-between gap-6 xl:items-end mb-8">
+                    <div>
+                        <div class="inline-flex items-center gap-2 text-xs font-bold bg-white/10 border border-white/10 rounded-full px-3 py-1 mb-4">
+                            <span class="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></span>
+                            Live retail gamification command center
+                        </div>
+                        <h1 class="text-4xl sm:text-5xl font-extrabold tracking-tight">Admin panel for prize-linked quests</h1>
+                        <!-- <p class="text-slate-300 mt-3 max-w-3xl">Create prize-linked quests, schedule them into the customer digital channel, edit campaigns from the calendar, and monitor CASA, engagement, spending, risk, and Social Responsibility outcomes.</p> -->
+                    </div>
+                    <!-- <div class="flex flex-wrap gap-3">
+                        <button id="seedButton" class="bg-white/10 border border-white/15 hover:bg-white/15 text-white px-4 py-3 rounded-xl font-bold transition">
+                            <i class="fas fa-layer-group mr-2"></i> Load examples
+                        </button>
+                        <button id="openCreateQuest" class="bg-blue-500 hover:bg-blue-400 text-white px-5 py-3 rounded-xl font-bold shadow-lg shadow-blue-900/30 transition">
+                            <i class="fas fa-wand-magic-sparkles mr-2"></i> Quest Forge
+                        </button>
+                    </div> -->
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5" id="kpiGrid"></div>
+            </div>
+        </section>
+
+        <div class="max-w-7xl mx-auto px-5 sm:px-8 py-8 space-y-8">
+            <section id="questForge" class="space-y-8">
+                <div id="questForgeModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 modal-backdrop">
+                    <div class="bg-white rounded-[1.7rem] shadow-2xl max-w-3xl w-full max-h-[92vh] overflow-y-auto custom-scrollbar">
+                    <div class="p-6 border-b border-slate-100 bg-slate-50/70">
+                        <div class="flex items-start justify-between gap-4">
+                            <div>
+                                <h2 class="text-xl font-extrabold text-slate-900">Quest Forge Form</h2>
+                                <p class="text-sm text-slate-500 mt-1">Enter a quest once. It appears in the calendar, customer channel table, and analytics.</p>
+                            </div>
+                            <button id="closeQuestForge" class="w-10 h-10 rounded-xl bg-white border border-slate-200 hover:bg-slate-100"><i class="fas fa-times"></i></button>
+                        </div>
+                    </div>
+                    <form id="questForm" class="p-6 space-y-4">
+                        <input type="hidden" id="questId">
+                        <div>
+                            <label class="text-xs font-bold uppercase tracking-widest text-slate-500">Quest title</label>
+                            <input id="questTitle" required maxlength="70" class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500" placeholder="e.g. Salary Anchor">
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label class="text-xs font-bold uppercase tracking-widest text-slate-500">Category</label>
+                                <select id="questCategory" required class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"></select>
+                            </div>
+                            <div>
+                                <label class="text-xs font-bold uppercase tracking-widest text-slate-500">Status</label>
+                                <select id="questStatus" required class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500">
+                                    <option>Draft</option><option>Scheduled</option><option>Live</option><option>Paused</option><option>Completed</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label class="text-xs font-bold uppercase tracking-widest text-slate-500">Start date</label>
+                                <input id="questStart" type="date" required class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500">
+                            </div>
+                            <div>
+                                <label class="text-xs font-bold uppercase tracking-widest text-slate-500">End date</label>
+                                <input id="questEnd" type="date" required class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="text-xs font-bold uppercase tracking-widest text-slate-500">Customer segment</label>
+                            <select id="questSegment" required class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500">
+                                <option>Mass Retail</option><option>Salary Customers</option><option>Youth & Students</option><option>Affluent</option><option>Credit Card Holders</option><option>Dormant Customers</option>
+                            </select>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div>
+                                <label class="text-xs font-bold uppercase tracking-widest text-slate-500">Target users</label>
+                                <input id="questTarget" type="number" min="1" required class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500" placeholder="25000">
+                            </div>
+                            <div>
+                                <label class="text-xs font-bold uppercase tracking-widest text-slate-500">Completion %</label>
+                                <input id="questCompletion" type="number" min="0" max="100" required class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500" placeholder="65">
+                            </div>
+                            <div>
+                                <label class="text-xs font-bold uppercase tracking-widest text-slate-500">XP reward</label>
+                                <input id="questXp" type="number" min="0" required class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500" placeholder="500">
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label class="text-xs font-bold uppercase tracking-widest text-slate-500">Forecast revenue</label>
+                                <input id="questRevenue" type="number" min="0" required class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500" placeholder="125000">
+                            </div>
+                            <div>
+                                <label class="text-xs font-bold uppercase tracking-widest text-slate-500">Prize budget</label>
+                                <input id="questBudget" type="number" min="0" required class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500" placeholder="18000">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="text-xs font-bold uppercase tracking-widest text-slate-500">Customer action</label>
+                            <textarea id="questAction" required rows="3" class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500" placeholder="Describe what the customer must do in mobile or internet banking."></textarea>
+                        </div>
+                        <div class="flex gap-3 pt-2">
+                            <button class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-bold transition" type="submit"><i class="fas fa-save mr-2"></i><span id="saveButtonLabel">Save Quest</span></button>
+                            <button id="resetForm" class="px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition" type="button">Reset</button>
+                        </div>
+                    </form>
+                    </div>
+                </div>
+
+                <div class="space-y-8">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-5" id="categoryCards"></div>
+                    <div id="calendar" class="bg-white rounded-[1.7rem] border border-slate-200 shadow-sm overflow-hidden">
+                        <div class="p-5 sm:p-6 border-b border-slate-100 flex flex-col sm:flex-row gap-4 sm:items-center sm:justify-between bg-slate-50/60">
+                            <div>
+                                <h2 class="text-xl font-extrabold text-slate-900">Campaign Calendar</h2>
+                                <p class="text-sm text-slate-500">Filter, plan, and click any quest badge to edit it. Use + on a day to schedule faster.</p>
+                            </div>
+                            <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+                                <button id="openQuestForgeInline" class="bg-blue-600 hover:bg-blue-700 text-white px-2 py-2 rounded-xl font-bold transition shadow-lg shadow-blue-100">
+                                    <i class="fas fa-plus mr-2"></i> New Quest
+                                </button>
+                                <button id="seedButton" class="bg-slate-900 hover:bg-slate-800 text-white px-2 py-2 rounded-xl font-bold transition shadow-lg shadow-slate-100">
+                                    <i class="fas fa-rotate mr-2"></i> Reload
+                                </button>
+                                <div class="flex items-center gap-2">
+                                    <button id="prevMonth" class="w-10 h-10 rounded-xl bg-white border border-slate-200 hover:bg-slate-100"><i class="fas fa-chevron-left"></i></button>
+                                    <div id="monthLabel" class="min-w-[160px] text-center font-extrabold"></div>
+                                    <button id="nextMonth" class="w-10 h-10 rounded-xl bg-white border border-slate-200 hover:bg-slate-100"><i class="fas fa-chevron-right"></i></button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="p-4 sm:p-5 border-b border-slate-100 bg-white space-y-4">
+                            <div class="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
+                                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 flex-1">
+                                    <select id="calendarCategoryFilter" class="rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"></select>
+                                    <select id="calendarStatusFilter" class="rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500">
+                                        <option value="all">All statuses</option>
+                                        <option>Draft</option><option>Scheduled</option><option>Live</option><option>Paused</option><option>Completed</option>
+                                    </select>
+                                    <button id="todayButton" class="rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50">
+                                        <i class="fas fa-location-crosshairs mr-2 text-blue-600"></i>Today
+                                    </button>
+                                </div>
+                                <div class="flex rounded-xl bg-slate-100 p-1">
+                                    <button id="monthViewButton" class="calendar-view-btn px-4 py-2 rounded-lg text-sm font-bold bg-white text-blue-700 shadow-sm" data-view="month">Month</button>
+                                    <button id="weekViewButton" class="calendar-view-btn px-4 py-2 rounded-lg text-sm font-bold text-slate-500" data-view="week">Week</button>
+                                </div>
+                            </div>
+                            <div id="calendarSummary" class="grid grid-cols-2 lg:grid-cols-4 gap-3"></div>
+                            <div id="calendarLegend" class="flex flex-wrap gap-2 text-xs font-bold"></div>
+                        </div>
+                        <div class="grid grid-cols-7 bg-slate-100/70 text-[10px] sm:text-xs font-extrabold uppercase tracking-widest text-slate-500">
+                            <div class="p-3 text-center">Sun</div><div class="p-3 text-center">Mon</div><div class="p-3 text-center">Tue</div><div class="p-3 text-center">Wed</div><div class="p-3 text-center">Thu</div><div class="p-3 text-center">Fri</div><div class="p-3 text-center">Sat</div>
+                        </div>
+                        <div id="calendarGrid" class="grid grid-cols-7"></div>
+                        <div class="p-5 sm:p-6 bg-slate-50 border-t border-slate-100">
+                            <div class="flex items-center justify-between mb-4">
+                                <div>
+                                    <h3 class="font-extrabold text-slate-900">Upcoming Launch Agenda</h3>
+                                    <p class="text-xs text-slate-500">Next scheduled starts in the selected period.</p>
+                                </div>
+                                <span id="calendarPeriodLabel" class="text-xs font-bold text-blue-700 bg-blue-50 px-3 py-1 rounded-full"></span>
+                            </div>
+                            <div id="calendarAgenda" class="grid grid-cols-1 lg:grid-cols-2 gap-3"></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="questTable" class="bg-white rounded-[1.7rem] border border-slate-200 shadow-sm overflow-hidden">
+                <div class="p-5 sm:p-6 border-b border-slate-100 flex flex-col xl:flex-row xl:items-center gap-4 xl:justify-between bg-slate-50/60">
+                    <div>
+                        <h2 class="text-xl font-extrabold text-slate-900">Digital Channel Quest Table</h2>
+                        <p class="text-sm text-slate-500">Everything here is ready to publish to mobile, web, branch tablet, or call center journeys.</p>
+                    </div>
+                    <div class="flex flex-col sm:flex-row flex-wrap gap-3">
+                        <input id="searchInput" class="rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500" placeholder="Search quests...">
+                        <select id="categoryFilter" class="rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"></select>
+                        <select id="questStatusFilter" class="rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500">
+                            <option value="all">All statuses</option><option>Draft</option><option>Scheduled</option><option>Live</option><option>Paused</option><option>Completed</option>
+                        </select>
+                        <select id="questRowsPerPage" class="rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500">
+                            <option value="5">5 rows</option><option value="10">10 rows</option><option value="25">25 rows</option><option value="all">All rows</option>
+                        </select>
+                        <button id="exportButton" class="bg-slate-900 hover:bg-slate-800 text-white px-4 py-3 rounded-xl font-bold transition"><i class="fas fa-download mr-2"></i>CSV</button>
+                    </div>
+                </div>
+                <div class="overflow-x-auto custom-scrollbar">
+                    <table class="w-full text-left min-w-[980px]">
+                        <thead class="bg-white text-[10px] uppercase tracking-[.18em] text-slate-400 border-b border-slate-100">
+                            <tr>
+                                <th class="p-5"><button class="quest-sort hover:text-blue-700" data-sort="title">Quest <i class="fas fa-sort ml-1"></i></button></th><th class="p-5"><button class="quest-sort hover:text-blue-700" data-sort="category">Category <i class="fas fa-sort ml-1"></i></button></th><th class="p-5"><button class="quest-sort hover:text-blue-700" data-sort="start">Schedule <i class="fas fa-sort ml-1"></i></button></th><th class="p-5"><button class="quest-sort hover:text-blue-700" data-sort="completed">Customers <i class="fas fa-sort ml-1"></i></button></th><th class="p-5"><button class="quest-sort hover:text-blue-700" data-sort="revenue">Forecast <i class="fas fa-sort ml-1"></i></button></th><th class="p-5"><button class="quest-sort hover:text-blue-700" data-sort="roi">ROI <i class="fas fa-sort ml-1"></i></button></th><th class="p-5"><button class="quest-sort hover:text-blue-700" data-sort="status">Status <i class="fas fa-sort ml-1"></i></button></th><th class="p-5 text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="questRows" class="divide-y divide-slate-100 text-sm"></tbody>
+                    </table>
+                </div>
+                <div class="p-5 border-t border-slate-100 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div id="questTableInfo" class="text-sm font-bold text-slate-500"></div>
+                    <div id="questPagination" class="flex flex-wrap items-center gap-2"></div>
+                </div>
+            </section>
+
+            <section id="customerRanking" class="bg-white rounded-[1.7rem] border border-slate-200 shadow-sm overflow-hidden">
+                <div class="p-5 sm:p-6 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 bg-slate-50/60">
+                    <div>
+                        <h2 class="text-xl font-extrabold text-slate-900">Top 10 Customer Ranking</h2>
+                        <p class="text-sm text-slate-500">Leaderboard of customers with the highest quest activity, XP, and business impact.</p>
+                        <div class="flex flex-wrap gap-2 text-xs font-bold mt-3">
+                            <span class="px-3 py-1 rounded-full bg-amber-50 text-amber-700"><i class="fas fa-crown mr-1"></i>Prize eligible</span>
+                            <span class="px-3 py-1 rounded-full bg-blue-50 text-blue-700"><i class="fas fa-bolt mr-1"></i>XP based</span>
+                        </div>
+                    </div>
+                    <div class="flex flex-col sm:flex-row flex-wrap gap-3">
+                        <input id="customerSearchInput" class="rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500" placeholder="Search customers...">
+                        <select id="customerSegmentFilter" class="rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"></select>
+                        <select id="customerTierFilter" class="rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"></select>
+                        <select id="customerRowsPerPage" class="rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500">
+                            <option value="5">5 rows</option><option value="10">10 rows</option><option value="all">All rows</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="overflow-x-auto custom-scrollbar">
+                    <table class="w-full text-left min-w-[980px]">
+                        <thead class="bg-white text-[10px] uppercase tracking-[.18em] text-slate-400 border-b border-slate-100">
+                            <tr>
+                                <th class="p-5"><button class="customer-sort hover:text-blue-700" data-sort="rank">Rank <i class="fas fa-sort ml-1"></i></button></th>
+                                <th class="p-5"><button class="customer-sort hover:text-blue-700" data-sort="name">Customer <i class="fas fa-sort ml-1"></i></button></th>
+                                <th class="p-5"><button class="customer-sort hover:text-blue-700" data-sort="segment">Segment <i class="fas fa-sort ml-1"></i></button></th>
+                                <th class="p-5"><button class="customer-sort hover:text-blue-700" data-sort="quests">Completed Quests <i class="fas fa-sort ml-1"></i></button></th>
+                                <th class="p-5"><button class="customer-sort hover:text-blue-700" data-sort="xp">XP <i class="fas fa-sort ml-1"></i></button></th>
+                                <th class="p-5"><button class="customer-sort hover:text-blue-700" data-sort="completion">Completion <i class="fas fa-sort ml-1"></i></button></th>
+                                <th class="p-5"><button class="customer-sort hover:text-blue-700" data-sort="impact">Business Impact <i class="fas fa-sort ml-1"></i></button></th>
+                                <th class="p-5"><button class="customer-sort hover:text-blue-700" data-sort="tier">Prize Tier <i class="fas fa-sort ml-1"></i></button></th>
+                            </tr>
+                        </thead>
+                        <tbody id="customerRankingRows" class="divide-y divide-slate-100 text-sm"></tbody>
+                    </table>
+                </div>
+                <div class="p-5 border-t border-slate-100 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div id="customerTableInfo" class="text-sm font-bold text-slate-500"></div>
+                    <div id="customerPagination" class="flex flex-wrap items-center gap-2"></div>
+                </div>
+            </section>
+
+            <section id="analytics" class="grid grid-cols-1 xl:grid-cols-3 gap-8">
+                <div class="xl:col-span-2 bg-white rounded-[1.7rem] border border-slate-200 shadow-sm p-5 sm:p-6">
+                    <div class="flex items-start justify-between gap-4 mb-6">
+                        <div>
+                            <h2 class="text-xl font-extrabold text-slate-900">Revenue & Engagement Forecast</h2>
+                            <p class="text-sm text-slate-500">Projected business uplift by quest start month.</p>
+                        </div>
+                        <span class="text-xs font-bold bg-blue-50 text-blue-700 px-3 py-1 rounded-full">Forecast model</span>
+                    </div>
+                    <div class="h-80"><canvas id="forecastChart"></canvas></div>
+                </div>
+                <div class="bg-white rounded-[1.7rem] border border-slate-200 shadow-sm p-5 sm:p-6">
+                    <h2 class="text-xl font-extrabold text-slate-900 mb-1">Quest Mix</h2>
+                    <p class="text-sm text-slate-500 mb-6">Active quest distribution by strategic objective.</p>
+                    <div class="h-80"><canvas id="categoryMixChart"></canvas></div>
+                </div>
+                <div class="bg-white rounded-[1.7rem] border border-slate-200 shadow-sm p-5 sm:p-6">
+                    <h2 class="text-xl font-extrabold text-slate-900 mb-1">Customer Funnel</h2>
+                    <p class="text-sm text-slate-500 mb-6">Targeted, participating, and completed quest users.</p>
+                    <div class="h-72"><canvas id="funnelChart"></canvas></div>
+                </div>
+                <div class="xl:col-span-2 bg-white rounded-[1.7rem] border border-slate-200 shadow-sm p-5 sm:p-6">
+                    <h2 class="text-xl font-extrabold text-slate-900 mb-1">Strategic KPI Scorecard</h2>
+                    <p class="text-sm text-slate-500 mb-6">Management view across CASA, services, spending, risk, and socialresponsibility.</p>
+                    <div class="h-72"><canvas id="scorecardChart"></canvas></div>
+                </div>
+            </section>
+        </div>
+    </main>
+</div>
+
+<div id="questModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 modal-backdrop">
+    <div class="bg-white rounded-[1.7rem] shadow-2xl max-w-2xl w-full overflow-hidden">
+        <div class="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+            <div>
+                <h3 id="modalTitle" class="text-xl font-extrabold text-slate-900">Quest Details</h3>
+                <p id="modalSubtitle" class="text-sm text-slate-500"></p>
+            </div>
+            <button id="closeModal" class="w-10 h-10 rounded-xl bg-white border border-slate-200 hover:bg-slate-100"><i class="fas fa-times"></i></button>
+        </div>
+        <div id="modalBody" class="p-6"></div>
+    </div>
+</div>
+
+<script>
+    const categories = {
+        casa: { label: 'Improve CASA', short: 'CASA', icon: 'fa-piggy-bank', color: '#2563eb', bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-100' },
+        engagement: { label: 'Increase Engagement', short: 'ENGAGE', icon: 'fa-mobile-screen-button', color: '#7c3aed', bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-violet-100' },
+        spending: { label: 'Encourage Spending', short: 'SPEND', icon: 'fa-credit-card', color: '#f97316', bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-100' },
+        risk: { label: 'Risk Reduction and Good Behavior ', short: 'RISK', icon: 'fa-shield', color: '#dc2626', bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-100' },
+        socialresponsibility: { label: 'Social Responsibility', short: 'SOCIAL', icon: 'fa-hand-holding-heart', color: '#16a34a', bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-100' }
+    };
+
+    const initialQuests = [
+        { id: makeId(), title: 'Salary Anchor', category: 'casa', status: 'Live', start: '2026-05-01', end: '2026-05-20', segment: 'Salary Customers', target: 42000, completion: 58, xp: 1500, revenue: 420000, budget: 52000, action: 'Move salary account to the bank.' },
+        { id: makeId(), title: 'Save 2k in al hayrat for Two months', category: 'casa', status: 'Live', start: '2026-05-01', end: '2026-07-01', segment: 'Salary Customers', target: 42000, completion: 58, xp: 1500, revenue: 420000, budget: 52000, action: 'Save more than 2k in al hayrat account and get points.' },
+        { id: makeId(), title: 'Navigate in the App', category: 'spending', status: 'Scheduled', start: '2026-05-12', end: '2026-05-29', segment: 'Mass Retail', target: 36000, completion: 66, xp: 800, revenue: 260000, budget: 41000, action: 'Navigate through the app and complete the guided tutorial and table at least one service.' },
+        { id: makeId(), title: 'Plan your vacation with Gulf Air', category: 'spending', status: 'Scheduled', start: '2026-05-18', end: '2026-05-31', segment: 'Mass Retail', target: 28000, completion: 54, xp: 500, revenue: 85000, budget: 14000, action: 'Plan your vacation with Gulf Air and book your tickets from a BBK card/account.' },
+        { id: makeId(), title: 'Get your Daily Coffee From Starbucks', category: 'spending', status: 'Scheduled', start: '2026-05-18', end: '2026-05-31', segment: 'Mass Retail', target: 28000, completion: 54, xp: 500, revenue: 85000, budget: 14000, action: 'Buy a coffee from Starbucks  for a whole month using your BBK card.' },
+        { id: makeId(), title: 'Buy a Ticket For Al Dana Concerts', category: 'spending', status: 'Scheduled', start: '2026-05-18', end: '2026-05-31', segment: 'Mass Retail', target: 28000, completion: 54, xp: 500, revenue: 85000, budget: 14000, action: 'Buy a ticket for Al Dana Concerts using your BBK card.' },
+        { id: makeId(), title: 'Buy From Lulu hypermarket', category: 'spending', status: 'Scheduled', start: '2026-05-18', end: '2026-05-31', segment: 'Mass Retail', target: 28000, completion: 54, xp: 500, revenue: 85000, budget: 14000, action: 'Do your shopping at Lulu hypermarket using your BBK card.' },
+        { id: makeId(), title: 'Get a Financing', category: 'casa', status: 'Scheduled', start: '2026-05-08', end: '2026-05-25', segment: 'Mass Retail', target: 30000, completion: 62, xp: 700, revenue: 180000, budget: 26000, action: 'Get any type of Financing personal, morgage, auto loan or advance salary.' },
+        { id: makeId(), title: 'Bill Pay Streak', category: 'engagement', status: 'Live', start: '2026-05-03', end: '2026-05-18', segment: 'Mass Retail', target: 55000, completion: 71, xp: 450, revenue: 95000, budget: 18000, action: 'Pay two utility bills through the mobile banking bill payment service.' },
+        { id: makeId(), title: 'Phishing Fighter', category: 'risk', status: 'Live', start: '2026-05-04', end: '2026-05-14', segment: 'Mass Retail', target: 75000, completion: 49, xp: 350, revenue: 0, budget: 12000, action: 'Report any phishing attempts on your account.' },
+        { id: makeId(), title: 'Pay credit card bills on time', category: 'risk', status: 'Live', start: '2026-05-04', end: '2026-05-14', segment: 'Mass Retail', target: 75000, completion: 49, xp: 350, revenue: 0, budget: 12000, action: 'Pay credit card bills on time.' },
+        { id: makeId(), title: 'Donate to Charity', category: 'socialresponsibility', status: 'Live', start: '2026-05-12', end: '2026-05-26', segment: 'Mass Retail', target: 22000, completion: 74, xp: 650, revenue: 60000, budget: 9000, action: 'Donate to a verified Charity initiative.' },
+        { id: makeId(), title: 'Green financing', category: 'socialresponsibility', status: 'Draft', start: '2026-06-02', end: '2026-06-19', segment: 'Youth & Students', target: 18000, completion: 48, xp: 900, revenue: 45000, budget: 15000, action: 'Get Financing for a green project (Solar system) or initiative.' }
+    ];
+
+    const topCustomers = [
+        { name: 'Mariam Al Omar', segment: 'Salary Customers', quests: 18, xp: 12850, completion: 98, impact: 18400, tier: 'Diamond' },
+        { name: 'Omar Haddad', segment: 'Affluent', quests: 17, xp: 11920, completion: 96, impact: 17100, tier: 'Diamond' },
+        { name: 'Layla Mansour', segment: 'Credit Card Holders', quests: 16, xp: 11240, completion: 94, impact: 15250, tier: 'Platinum' },
+        { name: 'Yousef Karim', segment: 'Mass Retail', quests: 15, xp: 10780, completion: 92, impact: 13900, tier: 'Platinum' },
+        { name: 'Noura Saleh', segment: 'Youth & Students', quests: 15, xp: 10220, completion: 90, impact: 12150, tier: 'Gold' },
+        { name: 'Fahad Al Nasser', segment: 'Affluent', quests: 14, xp: 9875, completion: 89, impact: 11800, tier: 'Gold' },
+        { name: 'Sara Qureshi', segment: 'Mass Retail', quests: 13, xp: 9250, completion: 86, impact: 10400, tier: 'Gold' },
+        { name: 'Khalid Rahman', segment: 'Dormant Customers', quests: 12, xp: 8810, completion: 84, impact: 9600, tier: 'Silver' },
+        { name: 'Aisha Khan', segment: 'Credit Card Holders', quests: 12, xp: 8425, completion: 82, impact: 8950, tier: 'Silver' },
+        { name: 'Hassan Diab', segment: 'Salary Customers', quests: 11, xp: 7980, completion: 80, impact: 8200, tier: 'Silver' }
+    ];
+
+    const storeKey = 'bankquest-admin-quests-v1';
+    const storeSeedKey = `${storeKey}-seed-signature`;
+    let quests = loadQuests();
+    let calendarDate = new Date(2026, 4, 1);
+    let calendarView = 'month';
+    const charts = {};
+    const tableState = {
+        quests: { page: 1, pageSize: 5, sortKey: 'start', sortDirection: 'asc' },
+        customers: { page: 1, pageSize: 5, sortKey: 'rank', sortDirection: 'asc' }
+    };
+
+    const money = value => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value || 0);
+    const compact = value => new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(value || 0);
+    const percent = value => `${Math.round(value || 0)}%`;
+    const byId = id => document.getElementById(id);
+
+    function makeId() {
+        return window.crypto && crypto.randomUUID ? crypto.randomUUID() : `quest-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    }
+
+    function loadQuests() {
+        const currentSeed = seedSignature(initialQuests);
+        const savedSeed = localStorage.getItem(storeSeedKey);
+        const saved = localStorage.getItem(storeKey);
+        if (!saved || savedSeed !== currentSeed) return resetStoredQuestsFromSeed(currentSeed);
+        try { return normalizeQuests(JSON.parse(saved)); } catch { return resetStoredQuestsFromSeed(currentSeed); }
+    }
+
+    function seedSignature(list) {
+        return JSON.stringify(normalizeQuests(list).map(({ id, ...quest }) => quest));
+    }
+
+    function resetStoredQuestsFromSeed(signature = seedSignature(initialQuests)) {
+        const seededQuests = normalizeQuests(initialQuests.map(quest => ({ ...quest, id: makeId() })));
+        localStorage.setItem(storeKey, JSON.stringify(seededQuests));
+        localStorage.setItem(storeSeedKey, signature);
+        return seededQuests;
+    }
+
+    function normalizeQuests(list) {
+        const categoryAliases = { solidarity: 'socialresponsibility' };
+        if (!Array.isArray(list)) return initialQuests;
+        return list.map(quest => {
+            const category = categoryAliases[quest.category] || quest.category;
+            return { ...quest, category: categories[category] ? category : 'engagement' };
+        });
+    }
+
+    function saveQuests() {
+        localStorage.setItem(storeKey, JSON.stringify(quests));
+        localStorage.setItem(storeSeedKey, seedSignature(initialQuests));
+    }
+
+    function initialize() {
+        populateSelects();
+        bindEvents();
+        resetFormToDefault();
+        renderAll();
+    }
+
+    function populateSelects() {
+        const categoryOptions = Object.entries(categories).map(([key, category]) => `<option value="${key}">${category.label}</option>`).join('');
+        const segmentOptions = [...new Set(topCustomers.map(customer => customer.segment))].sort().map(segment => `<option>${segment}</option>`).join('');
+        const tierOptions = [...new Set(topCustomers.map(customer => customer.tier))].map(tier => `<option>${tier}</option>`).join('');
+        byId('questCategory').innerHTML = categoryOptions;
+        byId('categoryFilter').innerHTML = `<option value="all">All categories</option>${categoryOptions}`;
+        byId('calendarCategoryFilter').innerHTML = `<option value="all">All calendar categories</option>${categoryOptions}`;
+        byId('customerSegmentFilter').innerHTML = `<option value="all">All segments</option>${segmentOptions}`;
+        byId('customerTierFilter').innerHTML = `<option value="all">All prize tiers</option>${tierOptions}`;
+    }
+
+    function bindEvents() {
+        byId('questForm').addEventListener('submit', handleSubmit);
+        byId('resetForm').addEventListener('click', resetFormToDefault);
+        byId('searchInput').addEventListener('input', () => { tableState.quests.page = 1; renderTable(); });
+        byId('categoryFilter').addEventListener('change', () => { tableState.quests.page = 1; renderTable(); });
+        byId('questStatusFilter').addEventListener('change', () => { tableState.quests.page = 1; renderTable(); });
+        byId('questRowsPerPage').addEventListener('change', event => { tableState.quests.pageSize = event.target.value === 'all' ? 'all' : Number(event.target.value); tableState.quests.page = 1; renderTable(); });
+        document.querySelectorAll('.quest-sort').forEach(button => button.addEventListener('click', () => sortTable('quests', button.dataset.sort, renderTable)));
+        byId('customerSearchInput').addEventListener('input', () => { tableState.customers.page = 1; renderCustomerRanking(); });
+        byId('customerSegmentFilter').addEventListener('change', () => { tableState.customers.page = 1; renderCustomerRanking(); });
+        byId('customerTierFilter').addEventListener('change', () => { tableState.customers.page = 1; renderCustomerRanking(); });
+        byId('customerRowsPerPage').addEventListener('change', event => { tableState.customers.pageSize = event.target.value === 'all' ? 'all' : Number(event.target.value); tableState.customers.page = 1; renderCustomerRanking(); });
+        document.querySelectorAll('.customer-sort').forEach(button => button.addEventListener('click', () => sortTable('customers', button.dataset.sort, renderCustomerRanking)));
+        byId('prevMonth').addEventListener('click', () => shiftCalendar(-1));
+        byId('nextMonth').addEventListener('click', () => shiftCalendar(1));
+        byId('todayButton').addEventListener('click', () => { calendarDate = new Date(); renderCalendar(); });
+        byId('calendarCategoryFilter').addEventListener('change', renderCalendar);
+        byId('calendarStatusFilter').addEventListener('change', renderCalendar);
+        document.querySelectorAll('.calendar-view-btn').forEach(button => {
+            button.addEventListener('click', () => {
+                calendarView = button.dataset.view;
+                renderCalendar();
+            }); 
+        });
+        if (byId('openCreateQuest')) byId('openCreateQuest').addEventListener('click', openQuestForgeModal);
+        byId('openQuestForgeInline').addEventListener('click', openQuestForgeModal);
+        byId('closeQuestForge').addEventListener('click', closeQuestForgeModal);
+        byId('questForgeModal').addEventListener('click', event => { if (event.target.id === 'questForgeModal') closeQuestForgeModal(); });
+        if (byId('seedButton')) byId('seedButton').addEventListener('click', () => {
+            quests = normalizeQuests(initialQuests.map(quest => ({ ...quest, id: makeId() })));
+            saveQuests();
+            renderAll();
+            resetFormToDefault();
+        });
+        byId('exportButton').addEventListener('click', exportCsv);
+        byId('closeModal').addEventListener('click', closeModal);
+        byId('questModal').addEventListener('click', event => { if (event.target.id === 'questModal') closeModal(); });
+    }
+
+    function handleSubmit(event) {
+        event.preventDefault();
+        const start = byId('questStart').value;
+        const end = byId('questEnd').value;
+        if (new Date(start) > new Date(end)) {
+            showModal('Schedule needs review', 'Start date cannot be after end date.', `<button onclick="closeModal()" class="bg-blue-600 text-white px-5 py-3 rounded-xl font-bold">OK</button>`);
+            return;
+        }
+        const data = {
+            id: byId('questId').value || makeId(), title: byId('questTitle').value.trim(), category: byId('questCategory').value,
+            status: byId('questStatus').value, start, end, segment: byId('questSegment').value, target: Number(byId('questTarget').value),
+            completion: Number(byId('questCompletion').value), xp: Number(byId('questXp').value), revenue: Number(byId('questRevenue').value),
+            budget: Number(byId('questBudget').value), action: byId('questAction').value.trim()
+        };
+        const existingIndex = quests.findIndex(quest => quest.id === data.id);
+        if (existingIndex >= 0) quests[existingIndex] = data;
+        else quests.unshift(data);
+        saveQuests(); renderAll(); resetFormToDefault(); closeQuestForgeModal(); byId('questTable').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function resetFormToDefault() {
+        byId('questForm').reset();
+        byId('questId').value = '';
+        byId('questCategory').value = 'casa';
+        byId('questStatus').value = 'Scheduled';
+        byId('questSegment').value = 'Mass Retail';
+        byId('questStart').value = '2026-05-01';
+        byId('questEnd').value = '2026-05-15';
+        byId('questCompletion').value = 60;
+        byId('questXp').value = 500;
+        byId('questTarget').value = 25000;
+        byId('questRevenue').value = 100000;
+        byId('questBudget').value = 15000;
+        byId('saveButtonLabel').textContent = 'Save Quest';
+    }
+
+    function editQuest(id) {
+        const quest = quests.find(item => item.id === id);
+        if (!quest) return;
+        byId('questId').value = quest.id;
+        byId('questTitle').value = quest.title;
+        byId('questCategory').value = quest.category;
+        byId('questStatus').value = quest.status;
+        byId('questStart').value = quest.start;
+        byId('questEnd').value = quest.end;
+        byId('questSegment').value = quest.segment;
+        byId('questTarget').value = quest.target;
+        byId('questCompletion').value = quest.completion;
+        byId('questXp').value = quest.xp;
+        byId('questRevenue').value = quest.revenue;
+        byId('questBudget').value = quest.budget;
+        byId('questAction').value = quest.action;
+        byId('saveButtonLabel').textContent = 'Update Quest';
+        closeModal(); openQuestForgeModal();
+    }
+
+    function deleteQuest(id) {
+        const quest = quests.find(item => item.id === id);
+        if (!quest) return;
+        showModal('Delete quest?', quest.title, `
+            <p class="text-slate-600 mb-6">This removes the quest from the customer channel table, campaign calendar, and all dashboard analytics.</p>
+            <div class="flex justify-end gap-3">
+                <button onclick="closeModal()" class="px-5 py-3 rounded-xl bg-slate-100 font-bold text-slate-700">Cancel</button>
+                <button onclick="confirmDelete('${id}')" class="px-5 py-3 rounded-xl bg-red-600 font-bold text-white">Delete</button>
+            </div>`);
+    }
+
+    function confirmDelete(id) { quests = quests.filter(item => item.id !== id); saveQuests(); closeModal(); renderAll(); }
+
+    function renderAll() { renderKpis(); renderCategoryCards(); renderCalendar(); renderTable(); renderCustomerRanking(); renderCharts(); }
+
+    function totals() {
+        const target = quests.reduce((sum, quest) => sum + quest.target, 0);
+        const completed = quests.reduce((sum, quest) => sum + quest.target * quest.completion / 100, 0);
+        const revenue = quests.reduce((sum, quest) => sum + quest.revenue, 0);
+        const budget = quests.reduce((sum, quest) => sum + quest.budget, 0);
+        const active = quests.filter(quest => ['Live', 'Scheduled'].includes(quest.status)).length;
+        return { target, completed, revenue, budget, active, roi: budget ? ((revenue - budget) / budget) * 100 : 0, completion: target ? (completed / target) * 100 : 0 };
+    }
+
+    function renderKpis() {
+        const summary = totals();
+        const kpis = [
+            { label: 'Active / Scheduled Quests', value: summary.active, sub: `${quests.length} total programs`, icon: 'fa-flag-checkered', color: 'blue' },
+            { label: 'Customers Doing Quests', value: compact(summary.completed), sub: `${percent(summary.completion)} forecast completion`, icon: 'fa-users', color: 'emerald' },
+            { label: 'Forecast Revenue', value: money(summary.revenue), sub: `${money(summary.budget)} prize budget`, icon: 'fa-dollar-sign', color: 'amber' },
+            { label: 'Forecast ROI', value: percent(summary.roi), sub: 'after prize budget', icon: 'fa-arrow-trend-up', color: 'violet' }
+        ];
+        byId('kpiGrid').innerHTML = kpis.map(kpi => `
+            <div class="glass-card kpi-card border border-white/10 rounded-3xl p-5">
+                <div class="flex items-start justify-between mb-5"><div class="w-12 h-12 rounded-2xl bg-${kpi.color}-400/15 text-${kpi.color}-200 flex items-center justify-center"><i class="fas ${kpi.icon}"></i></div><span class="text-[10px] uppercase tracking-widest text-slate-300 font-bold">Live</span></div>
+                <div class="text-sm text-slate-300">${kpi.label}</div><div class="text-3xl font-extrabold mt-1">${kpi.value}</div><div class="text-xs text-slate-400 mt-2">${kpi.sub}</div>
+            </div>`).join('');
+    }
+
+    function categoryStats() {
+        return Object.keys(categories).map(key => {
+            const list = quests.filter(quest => quest.category === key);
+            return { key, count: list.length, target: list.reduce((sum, quest) => sum + quest.target, 0), completed: list.reduce((sum, quest) => sum + quest.target * quest.completion / 100, 0), revenue: list.reduce((sum, quest) => sum + quest.revenue, 0), budget: list.reduce((sum, quest) => sum + quest.budget, 0) };
+        });
+    }
+
+    function renderCategoryCards() {
+        byId('categoryCards').innerHTML = categoryStats().map(stat => {
+            const category = categories[stat.key];
+            const roi = stat.budget ? ((stat.revenue - stat.budget) / stat.budget) * 100 : 0;
+            return `<div class="bg-white border ${category.border} rounded-3xl p-5 shadow-sm"><div class="flex justify-between items-start"><div class="w-11 h-11 rounded-2xl ${category.bg} ${category.text} flex items-center justify-center"><i class="fas ${category.icon}"></i></div><span class="text-xs font-extrabold ${category.text}">${stat.count} quests</span></div><h3 class="mt-4 font-extrabold text-slate-900">${category.label}</h3><div class="mt-3 grid grid-cols-2 gap-3 text-sm"><div><div class="text-slate-400 text-xs">Customers</div><div class="font-bold">${compact(stat.completed)}</div></div><div><div class="text-slate-400 text-xs">ROI</div><div class="font-bold">${percent(roi)}</div></div></div></div>`;
+        }).join('');
+    }
+
+    function shiftCalendar(direction) {
+        if (calendarView === 'week') calendarDate.setDate(calendarDate.getDate() + direction * 7);
+        else calendarDate.setMonth(calendarDate.getMonth() + direction);
+        renderCalendar();
+    }
+
+    function calendarFilteredQuests() {
+        const category = byId('calendarCategoryFilter')?.value || 'all';
+        const status = byId('calendarStatusFilter')?.value || 'all';
+        return quests.filter(quest => (category === 'all' || quest.category === category) && (status === 'all' || quest.status === status));
+    }
+
+    function renderCalendar() {
+        document.querySelectorAll('.calendar-view-btn').forEach(button => {
+            const active = button.dataset.view === calendarView;
+            button.classList.toggle('bg-white', active);
+            button.classList.toggle('text-blue-700', active);
+            button.classList.toggle('shadow-sm', active);
+            button.classList.toggle('text-slate-500', !active);
+        });
+
+        const year = calendarDate.getFullYear();
+        const month = calendarDate.getMonth();
+        const visibleQuests = calendarFilteredQuests();
+        let dates = [];
+        let periodStart;
+        let periodEnd;
+
+        if (calendarView === 'week') {
+            periodStart = startOfWeek(calendarDate);
+            periodEnd = addDays(periodStart, 6);
+            dates = Array.from({ length: 7 }, (_, index) => addDays(periodStart, index));
+            byId('monthLabel').textContent = `${formatDate(toDateKey(periodStart))} - ${formatDate(toDateKey(periodEnd))}`;
+        } else {
+            const firstDay = new Date(year, month, 1).getDay();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const totalCells = Math.ceil((firstDay + daysInMonth) / 7) * 7;
+            periodStart = new Date(year, month, 1);
+            periodEnd = new Date(year, month, daysInMonth);
+            dates = Array.from({ length: totalCells }, (_, index) => {
+                const day = index - firstDay + 1;
+                return day < 1 || day > daysInMonth ? null : new Date(year, month, day);
+            });
+            byId('monthLabel').textContent = calendarDate.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+        }
+
+        const todayKey = toDateKey(new Date());
+        byId('calendarGrid').innerHTML = dates.map(date => {
+            if (!date) return '<div class="calendar-cell border-r border-b border-slate-100 bg-slate-50/60"></div>';
+            const dateKey = toDateKey(date);
+            const dayQuests = visibleQuests.filter(quest => dateKey >= quest.start && dateKey <= quest.end);
+            const launches = dayQuests.filter(quest => quest.start === dateKey).length;
+            const endings = dayQuests.filter(quest => quest.end === dateKey).length;
+            const loadLevel = dayQuests.length >= 4 ? 'High load' : dayQuests.length >= 2 ? 'Balanced' : 'Open slot';
+            const loadClass = dayQuests.length >= 4 ? 'text-red-600 bg-red-50' : dayQuests.length >= 2 ? 'text-amber-600 bg-amber-50' : 'text-emerald-600 bg-emerald-50';
+            return `
+                <div class="calendar-cell border-r border-b border-slate-100 p-2 sm:p-3 hover:bg-blue-50/40 transition group ${dateKey === todayKey ? 'ring-2 ring-blue-400 ring-inset' : ''}">
+                    <div class="flex items-start justify-between gap-2 mb-2">
+                        <div>
+                            <div class="text-xs font-extrabold ${dateKey === todayKey ? 'bg-blue-600 text-white w-7 h-7 flex items-center justify-center rounded-full' : 'text-slate-500'}">${date.getDate()}</div>
+                            <div class="mt-1 text-[10px] font-bold rounded-full px-2 py-0.5 inline-block ${loadClass}">${loadLevel}</div>
+                        </div>
+                        <button onclick="scheduleOnDate('${dateKey}')" class="transition w-7 h-7 rounded-lg bg-white border border-slate-200 text-blue-700 hover:bg-blue-50 shadow-sm" title="Create quest on this day">+</button>
+                    </div>
+                    <div class="flex gap-1 mb-2 text-[10px] text-slate-400 font-bold">
+                        ${launches ? `<span class="bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded">${launches} start</span>` : ''}
+                        ${endings ? `<span class="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">${endings} end</span>` : ''}
+                    </div>
+                    <div class="space-y-1">
+                        ${dayQuests.slice(0, calendarView === 'week' ? 8 : 4).map(quest => calendarQuestButton(quest, dateKey)).join('')}
+                        ${dayQuests.length > (calendarView === 'week' ? 8 : 4) ? `<button onclick="openDayAgenda('${dateKey}')" class="text-[10px] font-bold text-slate-500 hover:text-blue-700">+${dayQuests.length - (calendarView === 'week' ? 8 : 4)} more</button>` : ''}
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        renderCalendarSummary(visibleQuests, periodStart, periodEnd);
+        renderCalendarLegend();
+        renderCalendarAgenda(visibleQuests, periodStart, periodEnd);
+    }
+
+    function calendarQuestButton(quest, dateKey) {
+        const category = categories[quest.category];
+        const marker = quest.start === dateKey ? '▶' : quest.end === dateKey ? '■' : '•';
+        return `<button onclick="openQuestDetails('${quest.id}')" class="quest-pill w-full text-left text-[10px] font-bold rounded-lg px-2 py-1 ${category.bg} ${category.text} border ${category.border}"><span class="mr-1">${marker}</span>${quest.title}</button>`;
+    }
+
+    function renderCalendarSummary(visibleQuests, periodStart, periodEnd) {
+        const startKey = toDateKey(periodStart);
+        const endKey = toDateKey(periodEnd);
+        const inPeriod = visibleQuests.filter(quest => quest.end >= startKey && quest.start <= endKey);
+        const launches = inPeriod.filter(quest => quest.start >= startKey && quest.start <= endKey).length;
+        const customers = inPeriod.reduce((sum, quest) => sum + quest.target * quest.completion / 100, 0);
+        const revenue = inPeriod.reduce((sum, quest) => sum + quest.revenue, 0);
+        const avgCompletion = inPeriod.length ? inPeriod.reduce((sum, quest) => sum + quest.completion, 0) / inPeriod.length : 0;
+        byId('calendarSummary').innerHTML = [
+            { label: 'Quests in period', value: inPeriod.length, icon: 'fa-calendar-check', color: 'blue' },
+            { label: 'New launches', value: launches, icon: 'fa-rocket', color: 'violet' },
+            { label: 'Customers doing', value: compact(customers), icon: 'fa-users', color: 'emerald' },
+            { label: 'Forecast revenue', value: money(revenue), icon: 'fa-sack-dollar', color: 'amber', sub: `${percent(avgCompletion)} avg completion` }
+        ].map(item => `<div class="rounded-2xl border border-slate-100 bg-slate-50 p-4"><div class="flex items-center justify-between"><span class="text-[10px] uppercase tracking-widest font-bold text-slate-400">${item.label}</span><i class="fas ${item.icon} text-${item.color}-600"></i></div><div class="text-xl font-extrabold text-slate-900 mt-2">${item.value}</div>${item.sub ? `<div class="text-xs text-slate-500 mt-1">${item.sub}</div>` : ''}</div>`).join('');
+        byId('calendarPeriodLabel').textContent = `${formatDate(startKey)} - ${formatDate(endKey)}`;
+    }
+
+    function renderCalendarLegend() {
+        byId('calendarLegend').innerHTML = Object.entries(categories).map(([key, category]) => `<span class="inline-flex items-center gap-2 px-3 py-1 rounded-full ${category.bg} ${category.text}"><i class="fas fa-circle text-[8px]"></i>${category.label}</span>`).join('') + '<span class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 text-slate-600">▶ starts</span><span class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 text-slate-600">■ ends</span>';
+    }
+
+    function renderCalendarAgenda(visibleQuests, periodStart, periodEnd) {
+        const startKey = toDateKey(periodStart);
+        const endKey = toDateKey(periodEnd);
+        const launches = visibleQuests.filter(quest => quest.start >= startKey && quest.start <= endKey).sort((a, b) => new Date(a.start) - new Date(b.start));
+        byId('calendarAgenda').innerHTML = launches.length ? launches.slice(0, 6).map(quest => {
+            const category = categories[quest.category];
+            return `<button onclick="openQuestDetails('${quest.id}')" class="text-left rounded-2xl bg-white border border-slate-200 p-4 hover:border-blue-200 hover:shadow-sm transition"><div class="flex items-center justify-between gap-3"><span class="font-extrabold text-slate-900">${quest.title}</span><span class="text-xs font-bold ${category.text} ${category.bg} px-2 py-1 rounded-full">${category.short}</span></div><div class="text-xs text-slate-500 mt-2">Starts ${formatDate(quest.start)} • ${quest.segment} • ${compact(quest.target)} targeted</div></button>`;
+        }).join('') : '<div class="lg:col-span-2 rounded-2xl bg-white border border-dashed border-slate-200 p-6 text-center text-slate-500">No launches match the current calendar filters.</div>';
+    }
+
+    function scheduleOnDate(dateKey) {
+        resetFormToDefault();
+        byId('questStart').value = dateKey;
+        byId('questEnd').value = dateKey;
+        openQuestForgeModal();
+    }
+
+    function openDayAgenda(dateKey) {
+        const dayQuests = calendarFilteredQuests().filter(quest => dateKey >= quest.start && dateKey <= quest.end);
+        showModal(`Agenda for ${formatDate(dateKey)}`, `${dayQuests.length} quests scheduled`, `<div class="space-y-3">${dayQuests.map(quest => { const category = categories[quest.category]; return `<button onclick="openQuestDetails('${quest.id}')" class="w-full text-left rounded-2xl border border-slate-200 p-4 hover:bg-slate-50"><div class="flex items-center justify-between"><span class="font-extrabold text-slate-900">${quest.title}</span><span class="text-xs font-bold ${category.bg} ${category.text} px-2 py-1 rounded-full">${category.short}</span></div><div class="text-xs text-slate-500 mt-2">${formatDate(quest.start)} to ${formatDate(quest.end)} • ${quest.status}</div></button>`; }).join('')}</div>`);
+    }
+
+    function startOfWeek(date) {
+        const copy = new Date(date);
+        copy.setHours(0, 0, 0, 0);
+        copy.setDate(copy.getDate() - copy.getDay());
+        return copy;
+    }
+
+    function addDays(date, days) {
+        const copy = new Date(date);
+        copy.setDate(copy.getDate() + days);
+        return copy;
+    }
+
+    function toDateKey(date) {
+        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    }
+
+    function sortTable(type, key, renderFn) {
+        const state = tableState[type];
+        state.sortDirection = state.sortKey === key && state.sortDirection === 'asc' ? 'desc' : 'asc';
+        state.sortKey = key;
+        state.page = 1;
+        renderFn();
+    }
+
+    function sortRows(rows, state, valueGetter) {
+        return [...rows].sort((a, b) => {
+            const valueA = valueGetter(a, state.sortKey);
+            const valueB = valueGetter(b, state.sortKey);
+            const result = typeof valueA === 'number' && typeof valueB === 'number'
+                ? valueA - valueB
+                : String(valueA).localeCompare(String(valueB));
+            return state.sortDirection === 'asc' ? result : -result;
+        });
+    }
+
+    function pageRows(rows, state) {
+        const pageSize = state.pageSize === 'all' ? rows.length || 1 : state.pageSize;
+        const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+        state.page = Math.min(Math.max(1, state.page), totalPages);
+        const start = (state.page - 1) * pageSize;
+        return { rows: rows.slice(start, start + pageSize), totalPages, start, end: Math.min(start + pageSize, rows.length) };
+    }
+
+    function renderPagination(containerId, infoId, type, totalRows, pageData, renderFn) {
+        const state = tableState[type];
+        byId(infoId).textContent = totalRows ? `Showing ${pageData.start + 1}-${pageData.end} of ${totalRows} records` : 'No records found';
+        const disabledPrev = state.page === 1 ? 'opacity-40 cursor-not-allowed' : 'hover:bg-slate-100';
+        const disabledNext = state.page === pageData.totalPages ? 'opacity-40 cursor-not-allowed' : 'hover:bg-slate-100';
+        byId(containerId).innerHTML = `
+            <button class="table-page-btn px-3 py-2 rounded-xl border border-slate-200 bg-white font-bold text-sm ${disabledPrev}" data-action="prev" ${state.page === 1 ? 'disabled' : ''}><i class="fas fa-chevron-left mr-1"></i>Prev</button>
+            <span class="px-3 py-2 rounded-xl bg-white border border-slate-200 text-sm font-extrabold text-slate-700">Page ${state.page} / ${pageData.totalPages}</span>
+            <button class="table-page-btn px-3 py-2 rounded-xl border border-slate-200 bg-white font-bold text-sm ${disabledNext}" data-action="next" ${state.page === pageData.totalPages ? 'disabled' : ''}>Next<i class="fas fa-chevron-right ml-1"></i></button>`;
+        byId(containerId).querySelectorAll('.table-page-btn').forEach(button => button.addEventListener('click', () => {
+            state.page += button.dataset.action === 'next' ? 1 : -1;
+            renderFn();
+        }));
+    }
+
+    function questSortValue(quest, key) {
+        const completed = quest.target * quest.completion / 100;
+        const roi = quest.budget ? ((quest.revenue - quest.budget) / quest.budget) * 100 : 0;
+        const values = { title: quest.title, category: categories[quest.category]?.label || quest.category, start: new Date(quest.start).getTime(), completed, revenue: quest.revenue, roi, status: quest.status };
+        return values[key] ?? quest.title;
+    }
+
+    function customerSortValue(customer, key) {
+        const values = { rank: customer.rank, name: customer.name, segment: customer.segment, quests: customer.quests, xp: customer.xp, completion: customer.completion, impact: customer.impact, tier: customer.tier };
+        return values[key] ?? customer.rank;
+    }
+
+    function filteredQuests() {
+        const term = byId('searchInput').value.trim().toLowerCase();
+        const category = byId('categoryFilter').value;
+        const status = byId('questStatusFilter').value;
+        return quests.filter(quest => (!term || `${quest.title} ${quest.action} ${quest.segment} ${quest.status}`.toLowerCase().includes(term)) && (category === 'all' || quest.category === category) && (status === 'all' || quest.status === status));
+    }
+
+    function renderTable() {
+        const sortedRows = sortRows(filteredQuests(), tableState.quests, questSortValue);
+        const pageData = pageRows(sortedRows, tableState.quests);
+        byId('questRows').innerHTML = pageData.rows.length ? pageData.rows.map(quest => {
+            const category = categories[quest.category];
+            const completed = quest.target * quest.completion / 100;
+            const roi = quest.budget ? ((quest.revenue - quest.budget) / quest.budget) * 100 : 0;
+            return `<tr class="hover:bg-slate-50/80 transition"><td class="p-5"><div class="font-extrabold text-slate-900">${quest.title}</div><div class="text-xs text-slate-500 mt-1 max-w-xs truncate">${quest.action}</div></td><td class="p-5"><span class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-extrabold ${category.bg} ${category.text}"><i class="fas ${category.icon}"></i>${category.short}</span></td><td class="p-5"><div class="font-bold">${formatDate(quest.start)}</div><div class="text-xs text-slate-400">to ${formatDate(quest.end)}</div></td><td class="p-5"><div class="font-bold">${compact(completed)} doing</div><div class="text-xs text-slate-400">${compact(quest.target)} targeted • ${quest.completion}%</div></td><td class="p-5"><div class="font-bold text-emerald-700">${money(quest.revenue)}</div><div class="text-xs text-slate-400">budget ${money(quest.budget)}</div></td><td class="p-5"><div class="font-extrabold ${roi >= 0 ? 'text-blue-700' : 'text-red-700'}">${percent(roi)}</div></td><td class="p-5">${statusBadge(quest.status)}</td><td class="p-5 text-right"><button onclick="openQuestDetails('${quest.id}')" class="w-9 h-9 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700"><i class="fas fa-eye"></i></button> <button onclick="editQuest('${quest.id}')" class="w-9 h-9 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700"><i class="fas fa-pen"></i></button> <button onclick="deleteQuest('${quest.id}')" class="w-9 h-9 rounded-xl bg-red-50 hover:bg-red-100 text-red-700"><i class="fas fa-trash"></i></button></td></tr>`;
+        }).join('') : '<tr><td colspan="8" class="p-10 text-center text-slate-500">No quests match the current filters.</td></tr>';
+        renderPagination('questPagination', 'questTableInfo', 'quests', sortedRows.length, pageData, renderTable);
+    }
+
+    function filteredCustomers() {
+        const term = byId('customerSearchInput').value.trim().toLowerCase();
+        const segment = byId('customerSegmentFilter').value;
+        const tier = byId('customerTierFilter').value;
+        return topCustomers.map((customer, index) => ({ ...customer, rank: index + 1 })).filter(customer => (!term || `${customer.name} ${customer.segment} ${customer.tier}`.toLowerCase().includes(term)) && (segment === 'all' || customer.segment === segment) && (tier === 'all' || customer.tier === tier));
+    }
+
+    function renderCustomerRanking() {
+        const sortedRows = sortRows(filteredCustomers(), tableState.customers, customerSortValue);
+        const pageData = pageRows(sortedRows, tableState.customers);
+        byId('customerRankingRows').innerHTML = pageData.rows.length ? pageData.rows.map(customer => {
+            const rank = customer.rank;
+            const rankClass = rank === 1 ? 'bg-amber-100 text-amber-700' : rank === 2 ? 'bg-slate-200 text-slate-700' : rank === 3 ? 'bg-orange-100 text-orange-700' : 'bg-blue-50 text-blue-700';
+            const tierClass = customer.tier === 'Diamond' ? 'bg-cyan-50 text-cyan-700' : customer.tier === 'Platinum' ? 'bg-violet-50 text-violet-700' : customer.tier === 'Gold' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-700';
+            return `
+                <tr class="hover:bg-slate-50/80 transition">
+                    <td class="p-5"><span class="inline-flex items-center justify-center w-9 h-9 rounded-xl font-extrabold ${rankClass}">${rank}</span></td>
+                    <td class="p-5">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-2xl bg-slate-900 text-white flex items-center justify-center font-extrabold">${customer.name.split(' ').map(part => part[0]).slice(0, 2).join('')}</div>
+                            <div>
+                                <div class="font-extrabold text-slate-900">${customer.name}</div>
+                                <div class="text-xs text-slate-400">Customer ID ${String(730000 + rank * 137).padStart(6, '0')}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="p-5"><span class="px-3 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-bold">${customer.segment}</span></td>
+                    <td class="p-5"><div class="font-extrabold text-slate-900">${customer.quests}</div><div class="text-xs text-slate-400">completed quests</div></td>
+                    <td class="p-5"><div class="font-extrabold text-blue-700">${new Intl.NumberFormat('en-US').format(customer.xp)}</div><div class="text-xs text-slate-400">reward points</div></td>
+                    <td class="p-5">
+                        <div class="flex items-center gap-3">
+                            <div class="w-28 bg-slate-100 h-2 rounded-full overflow-hidden"><div class="h-full bg-emerald-500 rounded-full" style="width:${customer.completion}%"></div></div>
+                            <span class="font-bold text-slate-700">${customer.completion}%</span>
+                        </div>
+                    </td>
+                    <td class="p-5"><div class="font-extrabold text-emerald-700">${money(customer.impact)}</div><div class="text-xs text-slate-400">estimated uplift</div></td>
+                    <td class="p-5"><span class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-extrabold ${tierClass}"><i class="fas fa-trophy"></i>${customer.tier}</span></td>
+                </tr>
+            `;
+        }).join('') : '<tr><td colspan="8" class="p-10 text-center text-slate-500">No customers match the current filters.</td></tr>';
+        renderPagination('customerPagination', 'customerTableInfo', 'customers', sortedRows.length, pageData, renderCustomerRanking);
+    }
+
+    function renderCharts() {
+        const monthly = {};
+        quests.forEach(quest => {
+            const key = new Date(`${quest.start}T00:00:00`).toLocaleString('en-US', { month: 'short', year: '2-digit' });
+            if (!monthly[key]) monthly[key] = { revenue: 0, engagement: 0 };
+            monthly[key].revenue += quest.revenue;
+            monthly[key].engagement += quest.target * quest.completion / 100;
+        });
+        const monthLabels = Object.keys(monthly);
+        upsertChart('forecastChart', { type: 'line', data: { labels: monthLabels, datasets: [{ label: 'Forecast Revenue', data: monthLabels.map(key => monthly[key].revenue), borderColor: '#2563eb', backgroundColor: 'rgba(37, 99, 235, .12)', fill: true, tension: .4, yAxisID: 'y' }, { label: 'Customers Doing Quests', data: monthLabels.map(key => monthly[key].engagement), borderColor: '#16a34a', backgroundColor: 'rgba(22, 163, 74, .12)', fill: true, tension: .4, yAxisID: 'y1' }] }, options: chartOptions({ dualAxis: true }) });
+        const stats = categoryStats();
+        upsertChart('categoryMixChart', { type: 'doughnut', data: { labels: stats.map(stat => categories[stat.key].label), datasets: [{ data: stats.map(stat => stat.count), backgroundColor: stats.map(stat => categories[stat.key].color), borderWidth: 0 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, usePointStyle: true } } }, cutout: '64%' } });
+        const summary = totals();
+        upsertChart('funnelChart', { type: 'bar', data: { labels: ['Targeted', 'Participating', 'Completed'], datasets: [{ label: 'Customers', data: [summary.target, summary.completed / Math.max(summary.completion / 100, 0.01), summary.completed], backgroundColor: ['#93c5fd', '#60a5fa', '#2563eb'], borderRadius: 14 }] }, options: chartOptions({ horizontal: true }) });
+        const scoreData = Object.keys(categories).map(key => { const list = quests.filter(quest => quest.category === key); return list.length ? Math.round(list.reduce((sum, quest) => sum + quest.completion, 0) / list.length) : 0; });
+        upsertChart('scorecardChart', { type: 'radar', data: { labels: Object.values(categories).map(category => category.short), datasets: [{ label: 'KPI Score', data: scoreData, backgroundColor: 'rgba(37, 99, 235, .14)', borderColor: '#2563eb', pointBackgroundColor: '#2563eb' }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { r: { min: 0, max: 100, ticks: { display: false }, grid: { color: '#e2e8f0' }, pointLabels: { color: '#475569', font: { weight: '700' } } } } } });
+    }
+
+    function upsertChart(id, config) { if (charts[id]) charts[id].destroy(); charts[id] = new Chart(byId(id), config); }
+
+    function chartOptions({ dualAxis = false, horizontal = false } = {}) {
+        const standardScales = horizontal
+            ? { x: { grid: { color: '#f1f5f9' }, ticks: { callback: value => compact(value) } }, y: { grid: { display: false } } }
+            : { x: { grid: { display: false } }, y: { grid: { color: '#f1f5f9' }, ticks: { callback: value => compact(value) } } };
+        return { indexAxis: horizontal ? 'y' : 'x', responsive: true, maintainAspectRatio: false, interaction: { intersect: false, mode: 'index' }, plugins: { legend: { labels: { usePointStyle: true, boxWidth: 8 } } }, scales: dualAxis ? { y: { type: 'linear', position: 'left', grid: { color: '#f1f5f9' }, ticks: { callback: value => compact(value) } }, y1: { type: 'linear', position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: value => compact(value) } }, x: { grid: { display: false } } } : standardScales };
+    }
+
+    function statusBadge(status) {
+        const styles = { Draft: 'bg-slate-100 text-slate-700', Scheduled: 'bg-blue-100 text-blue-700', Live: 'bg-emerald-100 text-emerald-700', Paused: 'bg-amber-100 text-amber-700', Completed: 'bg-violet-100 text-violet-700' };
+        return `<span class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-extrabold ${styles[status] || styles.Draft}"><span class="status-dot bg-current"></span>${status}</span>`;
+    }
+
+    function formatDate(value) { return new Date(`${value}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
+
+    function openQuestDetails(id) {
+        const quest = quests.find(item => item.id === id);
+        if (!quest) return;
+        const category = categories[quest.category];
+        const completed = quest.target * quest.completion / 100;
+        const roi = quest.budget ? ((quest.revenue - quest.budget) / quest.budget) * 100 : 0;
+        showModal(quest.title, category.label, `<div class="space-y-5"><div class="flex flex-wrap gap-2"><span class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-extrabold ${category.bg} ${category.text}"><i class="fas ${category.icon}"></i>${category.label}</span>${statusBadge(quest.status)}<span class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-extrabold bg-slate-100 text-slate-700"><i class="fas fa-gift"></i>${quest.xp} XP</span></div><p class="text-slate-600 leading-relaxed">${quest.action}</p><div class="grid grid-cols-2 lg:grid-cols-4 gap-4"><div class="rounded-2xl bg-slate-50 p-4"><div class="text-xs text-slate-400 font-bold uppercase">Target</div><div class="font-extrabold text-lg">${compact(quest.target)}</div></div><div class="rounded-2xl bg-slate-50 p-4"><div class="text-xs text-slate-400 font-bold uppercase">Doing</div><div class="font-extrabold text-lg">${compact(completed)}</div></div><div class="rounded-2xl bg-slate-50 p-4"><div class="text-xs text-slate-400 font-bold uppercase">Revenue</div><div class="font-extrabold text-lg">${money(quest.revenue)}</div></div><div class="rounded-2xl bg-slate-50 p-4"><div class="text-xs text-slate-400 font-bold uppercase">ROI</div><div class="font-extrabold text-lg">${percent(roi)}</div></div></div><div class="rounded-2xl border border-slate-200 p-4"><div class="flex justify-between text-sm mb-2"><span class="font-bold text-slate-700">Completion forecast</span><span class="font-extrabold text-blue-700">${quest.completion}%</span></div><div class="w-full bg-slate-100 h-3 rounded-full overflow-hidden"><div class="h-full rounded-full" style="width:${quest.completion}%; background:${category.color}"></div></div><div class="text-xs text-slate-500 mt-3">${formatDate(quest.start)} to ${formatDate(quest.end)} • ${quest.segment}</div></div><div class="flex justify-end gap-3"><button onclick="deleteQuest('${quest.id}')" class="px-5 py-3 rounded-xl bg-red-50 text-red-700 font-bold">Delete</button><button onclick="editQuest('${quest.id}')" class="px-5 py-3 rounded-xl bg-blue-600 text-white font-bold">Edit Quest</button></div></div>`);
+    }
+
+    function showModal(title, subtitle, body) {
+        byId('modalTitle').textContent = title;
+        byId('modalSubtitle').textContent = subtitle;
+        byId('modalBody').innerHTML = body;
+        byId('questModal').classList.remove('hidden');
+        byId('questModal').classList.add('flex');
+    }
+
+    function closeModal() { byId('questModal').classList.add('hidden'); byId('questModal').classList.remove('flex'); }
+
+    function openQuestForgeModal() {
+        byId('questForgeModal').classList.remove('hidden');
+        byId('questForgeModal').classList.add('flex');
+        setTimeout(() => byId('questTitle').focus(), 50);
+    }
+
+    function closeQuestForgeModal() {
+        byId('questForgeModal').classList.add('hidden');
+        byId('questForgeModal').classList.remove('flex');
+    }
+
+    function exportCsv() {
+        const headers = ['Title', 'Category', 'Status', 'Start', 'End', 'Segment', 'Target Customers', 'Completion %', 'Forecast Revenue', 'Prize Budget', 'Action'];
+        const body = filteredQuests().map(quest => [quest.title, categories[quest.category].label, quest.status, quest.start, quest.end, quest.segment, quest.target, quest.completion, quest.revenue, quest.budget, quest.action]);
+        const csv = [headers, ...body].map(row => row.map(value => `"${String(value).replaceAll('"', '""')}"`).join(',')).join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'bankquest-quests.csv';
+        link.click();
+        URL.revokeObjectURL(url);
+    }
+
+    window.editQuest = editQuest;
+    window.deleteQuest = deleteQuest;
+    window.confirmDelete = confirmDelete;
+    window.openQuestDetails = openQuestDetails;
+    window.closeModal = closeModal;
+    window.openQuestForgeModal = openQuestForgeModal;
+    window.closeQuestForgeModal = closeQuestForgeModal;
+    window.scheduleOnDate = scheduleOnDate;
+    window.openDayAgenda = openDayAgenda;
+    initialize();
+</script>
+</body>
+</html>
