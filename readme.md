@@ -378,3 +378,22 @@ This platform is a **banking gamification admin dashboard**.
 It allows the bank to create customer challenges, schedule them on a calendar, track expected customer participation, estimate revenue and ROI, rank top customers, and monitor performance across strategic objectives.
 
 In simple terms, it helps the bank turn customer actions into structured campaigns with points, rewards, monitoring, and management reporting.
+
+
+
+
+
+
+# To start the server
+Start Docker Desktop, then:
+
+```
+# Terminal 1 — DynamoDB Local
+docker compose up -d dynamodb-local
+
+# Terminal 2 — seed data
+cd backend && node seed.js
+
+# Terminal 3 — start server
+cd backend && npm run dev
+```

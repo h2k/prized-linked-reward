@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gamification Admin Platform</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
+    * { box-sizing: border-box; }
+    body { font-family: 'Outfit', sans-serif; background: #f8fafc; color: #0f172a; }
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+    .glass-card { background: #16284e; backdrop-filter: blur(16px); }
+    .kpi-card { transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease; }
+    .kpi-card:hover { transform: translateY(-3px); box-shadow: 0 18px 35px -25px rgba(15,23,42,.45); border-color: #bfdbfe; }
+    .calendar-cell { min-height: 128px; }
+    .quest-pill { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .modal-backdrop { background: rgba(15,23,42,.62); backdrop-filter: blur(5px); }
+    .status-dot { width: 9px; height: 9px; border-radius: 999px; display: inline-block; }
+    input[type="date"]::-webkit-calendar-picker-indicator { cursor: pointer; }
+    #toast { transition: opacity .3s ease, transform .3s ease; }
+    #toast.hide { opacity: 0; transform: translateY(1rem); }
+  </style>
+</head>
+<body>
+
+<!-- ── Toast notification ─────────────────────────────────────────────────── -->
+<div id="toast" class="hide fixed bottom-6 right-6 z-[100] max-w-sm bg-slate-900 text-white text-sm font-bold px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 pointer-events-none">
+  <i id="toastIcon" class="fas fa-check-circle text-emerald-400"></i>
+  <span id="toastMsg"></span>
+</div>
+
+<div class="flex h-screen overflow-hidden">
+  <main class="flex-1 overflow-y-auto custom-scrollbar bg-slate-50">
+
+    <!-- ── Hero / KPI section ─────────────────────────────────────────────── -->
+    <section class="relative overflow-hidden bg-gradient-to-br from-slate-950 via-blue-950 to-slate-900 text-white">
+      <div class="absolute inset-0 opacity-20" style="background-image:radial-gradient(circle at 15% 20%,#38bdf8 0,transparent 26%),radial-gradient(circle at 85% 5%,#f59e0b 0,transparent 22%),radial-gradient(circle at 70% 80%,#22c55e 0,transparent 24%);"></div>
+      <div class="relative max-w-7xl mx-auto px-5 sm:px-8 pt-8 pb-12">
+        <div class="flex flex-col xl:flex-row justify-between gap-6 xl:items-end mb-8">
+          <div>
+            <div class="inline-flex items-center gap-2 text-xs font-bold bg-white/10 border border-white/10 rounded-full px-3 py-1 mb-4">
+              <span class="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></span>
+              Live retail gamification command center
+            </div>
+            <h1 class="text-4xl sm:text-5xl font-extrabold tracking-tight">Admin panel for prize-linked quests</h1>
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            <span id="userBadge" class="text-xs font-bold bg-white/10 border border-white/10 rounded-full px-4 py-2 flex items-center gap-2">
+              <i class="fas fa-user-shield text-blue-300"></i>
+              <span id="userNameLabel">Loading…</span>
+            </span>
+            <button id="logoutBtn" class="bg-white/10 border border-white/15 hover:bg-white/20 text-white px-4 py-2 rounded-xl font-bold transition text-sm">
+              <i class="fas fa-arrow-right-from-bracket mr-2"></i>Sign out
+            </button>
+          </div>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5" id="kpiGrid">
+          <!-- Skeleton KPIs while loading -->
+          <div class="glass-card kpi-card border border-white/10 rounded-3xl p-5 animate-pulse h-40"></div>
+          <div class="glass-card kpi-card border border-white/10 rounded-3xl p-5 animate-pulse h-40"></div>
+          <div class="glass-card kpi-card border border-white/10 rounded-3xl p-5 animate-pulse h-40"></div>
+          <div class="glass-card kpi-card border border-white/10 rounded-3xl p-5 animate-pulse h-40"></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="max-w-7xl mx-auto px-5 sm:px-8 py-8 space-y-8">
+
+      <!-- ── Quest Forge Modal ──────────────────────────────────────────────── -->
+      <div id="questForgeModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 modal-backdrop">
+        <div class="bg-white rounded-[1.7rem] shadow-2xl max-w-3xl w-full max-h-[92vh] overflow-y-auto custom-scrollbar">
+          <div class="p-6 border-b border-slate-100 bg-slate-50/70">
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <h2 class="text-xl font-extrabold text-slate-900">Quest Forge Form</h2>
+                <p class="text-sm text-slate-500 mt-1">Enter a quest once. It appears in the calendar, customer channel table, and analytics.</p>
+              </div>
+              <button id="closeQuestForge" class="w-10 h-10 rounded-xl bg-white border border-slate-200 hover:bg-slate-100"><i class="fas fa-times"></i></button>
+            </div>
+          </div>
+          <form id="questForm" class="p-6 space-y-4" novalidate>
+            <input type="hidden" id="questId">
+            <div>
+              <label class="text-xs font-bold uppercase tracking-widest text-slate-500">Quest title</label>
+              <input id="questTitle" required maxlength="70" class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500" placeholder="e.g. Salary Anchor">
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="text-xs font-bold uppercase tracking-widest text-slate-500">Category</label>
+                <select id="questCategory" required class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"></select>
+              </div>
+              <div>
+                <label class="text-xs font-bold uppercase tracking-widest text-slate-500">Status</label>
+                <select id="questStatus" required class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500">
+                  <option>Draft</option><option>Scheduled</option><option>Live</option><option>Paused</option><option>Completed</option>
+                </select>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="text-xs font-bold uppercase tracking-widest text-slate-500">Start date</label>
+                <input id="questStart" type="date" required class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500">
+              </div>
+              <div>
+                <label class="text-xs font-bold uppercase tracking-widest text-slate-500">End date</label>
+                <input id="questEnd" type="date" required class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500">
+              </div>
+            </div>
+            <div>
+              <label class="text-xs font-bold uppercase tracking-widest text-slate-500">Customer segment</label>
+              <select id="questSegment" required class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500">
+                <option>Mass Retail</option><option>Salary Customers</option><option>Youth &amp; Students</option><option>Affluent</option><option>Credit Card Holders</option><option>Dormant Customers</option>
+              </select>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label class="text-xs font-bold uppercase tracking-widest text-slate-500">Target users</label>
+                <input id="questTarget" type="number" min="1" required class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500" placeholder="25000">
+              </div>
+              <div>
+                <label class="text-xs font-bold uppercase tracking-widest text-slate-500">Completion %</label>
+                <input id="questCompletion" type="number" min="0" max="100" required class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500" placeholder="65">
+              </div>
+              <div>
+                <label class="text-xs font-bold uppercase tracking-widest text-slate-500">XP reward</label>
+                <input id="questXp" type="number" min="0" required class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500" placeholder="500">
+              </div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="text-xs font-bold uppercase tracking-widest text-slate-500">Forecast revenue</label>
+                <input id="questRevenue" type="number" min="0" required class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500" placeholder="125000">
+              </div>
+              <div>
+                <label class="text-xs font-bold uppercase tracking-widest text-slate-500">Prize budget</label>
+                <input id="questBudget" type="number" min="0" required class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500" placeholder="18000">
+              </div>
+            </div>
+            <div>
+              <label class="text-xs font-bold uppercase tracking-widest text-slate-500">Customer action</label>
+              <textarea id="questAction" required rows="3" class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500" placeholder="Describe what the customer must do."></textarea>
+            </div>
+
+            <!-- Inline form error -->
+            <div id="formError" class="hidden flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-bold">
+              <i class="fas fa-triangle-exclamation flex-shrink-0"></i>
+              <span id="formErrorText"></span>
+            </div>
+
+            <div class="flex gap-3 pt-2">
+              <button class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-bold transition" type="submit">
+                <i class="fas fa-save mr-2"></i><span id="saveButtonLabel">Save Quest</span>
+              </button>
+              <button id="resetForm" class="px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition" type="button">Reset</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- ── Category cards + Calendar ─────────────────────────────────────── -->
+      <section class="space-y-8">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-5" id="categoryCards"></div>
+
+        <div id="calendar" class="bg-white rounded-[1.7rem] border border-slate-200 shadow-sm overflow-hidden">
+          <div class="p-5 sm:p-6 border-b border-slate-100 flex flex-col sm:flex-row gap-4 sm:items-center sm:justify-between bg-slate-50/60">
+            <div>
+              <h2 class="text-xl font-extrabold text-slate-900">Campaign Calendar</h2>
+              <p class="text-sm text-slate-500">Filter, plan, and click any quest badge to edit it.</p>
+            </div>
+            <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+              <button id="openQuestForgeInline" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-xl font-bold transition shadow-lg shadow-blue-100">
+                <i class="fas fa-plus mr-2"></i> New Quest
+              </button>
+              <button id="reloadData" class="bg-slate-900 hover:bg-slate-800 text-white px-3 py-2 rounded-xl font-bold transition">
+                <i class="fas fa-rotate mr-2"></i> Reload
+              </button>
+              <div class="flex items-center gap-2">
+                <button id="prevMonth" class="w-10 h-10 rounded-xl bg-white border border-slate-200 hover:bg-slate-100"><i class="fas fa-chevron-left"></i></button>
+                <div id="monthLabel" class="min-w-[160px] text-center font-extrabold"></div>
+                <button id="nextMonth" class="w-10 h-10 rounded-xl bg-white border border-slate-200 hover:bg-slate-100"><i class="fas fa-chevron-right"></i></button>
+              </div>
+            </div>
+          </div>
+          <div class="p-4 sm:p-5 border-b border-slate-100 bg-white space-y-4">
+            <div class="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 flex-1">
+                <select id="calendarCategoryFilter" class="rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"></select>
+                <select id="calendarStatusFilter" class="rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500">
+                  <option value="all">All statuses</option>
+                  <option>Draft</option><option>Scheduled</option><option>Live</option><option>Paused</option><option>Completed</option>
+                </select>
+                <button id="todayButton" class="rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50">
+                  <i class="fas fa-location-crosshairs mr-2 text-blue-600"></i>Today
+                </button>
+              </div>
+              <div class="flex rounded-xl bg-slate-100 p-1">
+                <button id="monthViewButton" class="calendar-view-btn px-4 py-2 rounded-lg text-sm font-bold bg-white text-blue-700 shadow-sm" data-view="month">Month</button>
+                <button id="weekViewButton"  class="calendar-view-btn px-4 py-2 rounded-lg text-sm font-bold text-slate-500" data-view="week">Week</button>
+              </div>
+            </div>
+            <div id="calendarSummary" class="grid grid-cols-2 lg:grid-cols-4 gap-3"></div>
+            <div id="calendarLegend" class="flex flex-wrap gap-2 text-xs font-bold"></div>
+          </div>
+          <div class="grid grid-cols-7 bg-slate-100/70 text-[10px] sm:text-xs font-extrabold uppercase tracking-widest text-slate-500">
+            <div class="p-3 text-center">Sun</div><div class="p-3 text-center">Mon</div><div class="p-3 text-center">Tue</div>
+            <div class="p-3 text-center">Wed</div><div class="p-3 text-center">Thu</div><div class="p-3 text-center">Fri</div><div class="p-3 text-center">Sat</div>
+          </div>
+          <div id="calendarGrid" class="grid grid-cols-7"></div>
+          <div class="p-5 sm:p-6 bg-slate-50 border-t border-slate-100">
+            <div class="flex items-center justify-between mb-4">
+              <div>
+                <h3 class="font-extrabold text-slate-900">Upcoming Launch Agenda</h3>
+                <p class="text-xs text-slate-500">Next scheduled starts in the selected period.</p>
+              </div>
+              <span id="calendarPeriodLabel" class="text-xs font-bold text-blue-700 bg-blue-50 px-3 py-1 rounded-full"></span>
+            </div>
+            <div id="calendarAgenda" class="grid grid-cols-1 lg:grid-cols-2 gap-3"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Digital Channel Quest Table ───────────────────────────────────── -->
+      <section id="questTable" class="bg-white rounded-[1.7rem] border border-slate-200 shadow-sm overflow-hidden">
+        <div class="p-5 sm:p-6 border-b border-slate-100 flex flex-col xl:flex-row xl:items-center gap-4 xl:justify-between bg-slate-50/60">
+          <div>
+            <h2 class="text-xl font-extrabold text-slate-900">Digital Channel Quest Table</h2>
+            <p class="text-sm text-slate-500">Ready to publish to mobile, web, branch tablet, or call centre.</p>
+          </div>
+          <div class="flex flex-col sm:flex-row flex-wrap gap-3">
+            <input id="searchInput" class="rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500" placeholder="Search quests…">
+            <select id="categoryFilter"    class="rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"></select>
+            <select id="questStatusFilter" class="rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500">
+              <option value="all">All statuses</option><option>Draft</option><option>Scheduled</option><option>Live</option><option>Paused</option><option>Completed</option>
+            </select>
+            <select id="questRowsPerPage" class="rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500">
+              <option value="5">5 rows</option><option value="10">10 rows</option><option value="25">25 rows</option><option value="all">All rows</option>
+            </select>
+            <button id="exportButton" class="bg-slate-900 hover:bg-slate-800 text-white px-4 py-3 rounded-xl font-bold transition"><i class="fas fa-download mr-2"></i>CSV</button>
+          </div>
+        </div>
+        <div class="overflow-x-auto custom-scrollbar">
+          <table class="w-full text-left min-w-[980px]">
+            <thead class="bg-white text-[10px] uppercase tracking-[.18em] text-slate-400 border-b border-slate-100">
+              <tr>
+                <th class="p-5"><button class="quest-sort hover:text-blue-700" data-sort="title">Quest <i class="fas fa-sort ml-1"></i></button></th>
+                <th class="p-5"><button class="quest-sort hover:text-blue-700" data-sort="category">Category <i class="fas fa-sort ml-1"></i></button></th>
+                <th class="p-5"><button class="quest-sort hover:text-blue-700" data-sort="start">Schedule <i class="fas fa-sort ml-1"></i></button></th>
+                <th class="p-5"><button class="quest-sort hover:text-blue-700" data-sort="completed">Customers <i class="fas fa-sort ml-1"></i></button></th>
+                <th class="p-5"><button class="quest-sort hover:text-blue-700" data-sort="revenue">Forecast <i class="fas fa-sort ml-1"></i></button></th>
+                <th class="p-5"><button class="quest-sort hover:text-blue-700" data-sort="roi">ROI <i class="fas fa-sort ml-1"></i></button></th>
+                <th class="p-5"><button class="quest-sort hover:text-blue-700" data-sort="status">Status <i class="fas fa-sort ml-1"></i></button></th>
+                <th class="p-5 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="questRows" class="divide-y divide-slate-100 text-sm"></tbody>
+          </table>
+        </div>
+        <div class="p-5 border-t border-slate-100 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div id="questTableInfo" class="text-sm font-bold text-slate-500"></div>
+          <div id="questPagination" class="flex flex-wrap items-center gap-2"></div>
+        </div>
+      </section>
+
+      <!-- ── Customer Ranking ───────────────────────────────────────────────── -->
+      <section id="customerRanking" class="bg-white rounded-[1.7rem] border border-slate-200 shadow-sm overflow-hidden">
+        <div class="p-5 sm:p-6 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 bg-slate-50/60">
+          <div>
+            <h2 class="text-xl font-extrabold text-slate-900">Top 10 Customer Ranking</h2>
+            <p class="text-sm text-slate-500">Leaderboard of customers with the highest quest activity, XP, and business impact.</p>
+            <div class="flex flex-wrap gap-2 text-xs font-bold mt-3">
+              <span class="px-3 py-1 rounded-full bg-amber-50 text-amber-700"><i class="fas fa-crown mr-1"></i>Prize eligible</span>
+              <span class="px-3 py-1 rounded-full bg-blue-50 text-blue-700"><i class="fas fa-bolt mr-1"></i>XP based</span>
+            </div>
+          </div>
+          <div class="flex flex-col sm:flex-row flex-wrap gap-3">
+            <input id="customerSearchInput" class="rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500" placeholder="Search customers…">
+            <select id="customerSegmentFilter" class="rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"></select>
+            <select id="customerTierFilter"    class="rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"></select>
+            <select id="customerRowsPerPage"   class="rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500">
+              <option value="5">5 rows</option><option value="10">10 rows</option><option value="all">All rows</option>
+            </select>
+          </div>
+        </div>
+        <div class="overflow-x-auto custom-scrollbar">
+          <table class="w-full text-left min-w-[980px]">
+            <thead class="bg-white text-[10px] uppercase tracking-[.18em] text-slate-400 border-b border-slate-100">
+              <tr>
+                <th class="p-5"><button class="customer-sort hover:text-blue-700" data-sort="rank">Rank <i class="fas fa-sort ml-1"></i></button></th>
+                <th class="p-5"><button class="customer-sort hover:text-blue-700" data-sort="name">Customer <i class="fas fa-sort ml-1"></i></button></th>
+                <th class="p-5"><button class="customer-sort hover:text-blue-700" data-sort="segment">Segment <i class="fas fa-sort ml-1"></i></button></th>
+                <th class="p-5"><button class="customer-sort hover:text-blue-700" data-sort="quests">Completed Quests <i class="fas fa-sort ml-1"></i></button></th>
+                <th class="p-5"><button class="customer-sort hover:text-blue-700" data-sort="xp">XP <i class="fas fa-sort ml-1"></i></button></th>
+                <th class="p-5"><button class="customer-sort hover:text-blue-700" data-sort="completion">Completion <i class="fas fa-sort ml-1"></i></button></th>
+                <th class="p-5"><button class="customer-sort hover:text-blue-700" data-sort="impact">Business Impact <i class="fas fa-sort ml-1"></i></button></th>
+                <th class="p-5"><button class="customer-sort hover:text-blue-700" data-sort="tier">Prize Tier <i class="fas fa-sort ml-1"></i></button></th>
+              </tr>
+            </thead>
+            <tbody id="customerRankingRows" class="divide-y divide-slate-100 text-sm"></tbody>
+          </table>
+        </div>
+        <div class="p-5 border-t border-slate-100 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div id="customerTableInfo" class="text-sm font-bold text-slate-500"></div>
+          <div id="customerPagination" class="flex flex-wrap items-center gap-2"></div>
+        </div>
+      </section>
+
+      <!-- ── Loyalty Engine ──────────────────────────────────────────────── -->
+      <section id="loyaltyEngine" class="space-y-6">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h2 class="text-2xl font-extrabold text-slate-900 flex items-center gap-3">
+              <span class="w-10 h-10 rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-200 flex-shrink-0">
+                <i class="fas fa-crown text-sm"></i>
+              </span>
+              Loyalty Engine
+            </h2>
+            <p class="text-sm text-slate-500 mt-1 ml-[52px]">Manage prize tiers, rewards catalog, and achievement badges.</p>
+          </div>
+          <button onclick="openRewardModal()" class="bg-violet-600 hover:bg-violet-700 text-white px-5 py-3 rounded-xl font-bold transition shadow-lg shadow-violet-100">
+            <i class="fas fa-plus mr-2"></i> New Reward
+          </button>
+        </div>
+
+        <!-- Loyalty KPIs -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-5" id="loyaltyKpiGrid">
+          <div class="bg-white border border-slate-200 rounded-3xl p-5 animate-pulse h-28"></div>
+          <div class="bg-white border border-slate-200 rounded-3xl p-5 animate-pulse h-28"></div>
+          <div class="bg-white border border-slate-200 rounded-3xl p-5 animate-pulse h-28"></div>
+          <div class="bg-white border border-slate-200 rounded-3xl p-5 animate-pulse h-28"></div>
+        </div>
+
+        <!-- Tier Distribution + Tier Configuration -->
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          <div class="bg-white rounded-[1.7rem] border border-slate-200 shadow-sm p-6">
+            <h3 class="font-extrabold text-slate-900 mb-5">Tier Distribution</h3>
+            <div id="tierDistribution" class="space-y-4"></div>
+          </div>
+          <div class="bg-white rounded-[1.7rem] border border-slate-200 shadow-sm p-6">
+            <div class="flex items-center justify-between mb-5">
+              <h3 class="font-extrabold text-slate-900">Tier Configuration</h3>
+              <span class="text-xs font-bold text-slate-400 bg-slate-50 border border-slate-100 px-3 py-1 rounded-full">Click <i class="fas fa-pen mx-1"></i> to edit XP thresholds</span>
+            </div>
+            <div id="tierConfigTable" class="space-y-3"></div>
+          </div>
+        </div>
+
+        <!-- Rewards Catalog -->
+        <div class="bg-white rounded-[1.7rem] border border-slate-200 shadow-sm overflow-hidden">
+          <div class="p-5 sm:p-6 border-b border-slate-100 flex flex-col sm:flex-row gap-4 sm:items-center sm:justify-between bg-slate-50/60">
+            <div>
+              <h3 class="text-xl font-extrabold text-slate-900">Rewards Catalog</h3>
+              <p class="text-sm text-slate-500">Prize-linked rewards customers can redeem with their XP points.</p>
+            </div>
+            <button onclick="openRewardModal()" class="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-xl font-bold transition">
+              <i class="fas fa-plus mr-2"></i> Add Reward
+            </button>
+          </div>
+          <div class="overflow-x-auto custom-scrollbar">
+            <table class="w-full text-left min-w-[820px]">
+              <thead class="bg-white text-[10px] uppercase tracking-[.18em] text-slate-400 border-b border-slate-100">
+                <tr>
+                  <th class="p-5">Reward</th>
+                  <th class="p-5">Type</th>
+                  <th class="p-5">Value</th>
+                  <th class="p-5">XP Cost</th>
+                  <th class="p-5">Stock</th>
+                  <th class="p-5">Status</th>
+                  <th class="p-5 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="rewardRows" class="divide-y divide-slate-100 text-sm"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Achievement Badges -->
+        <div class="bg-white rounded-[1.7rem] border border-slate-200 shadow-sm overflow-hidden">
+          <div class="p-5 sm:p-6 border-b border-slate-100 flex flex-col sm:flex-row gap-4 sm:items-center sm:justify-between bg-slate-50/60">
+            <div>
+              <h3 class="text-xl font-extrabold text-slate-900">Achievement Badges</h3>
+              <p class="text-sm text-slate-500">Milestone badges awarded automatically when quest criteria are met.</p>
+            </div>
+            <button onclick="openBadgeModal()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl font-bold transition">
+              <i class="fas fa-plus mr-2"></i> New Badge
+            </button>
+          </div>
+          <div id="badgeGrid" class="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"></div>
+        </div>
+      </section>
+
+      <!-- ── Analytics ──────────────────────────────────────────────────────── -->
+      <section id="analytics" class="grid grid-cols-1 xl:grid-cols-3 gap-8">
+        <div class="xl:col-span-2 bg-white rounded-[1.7rem] border border-slate-200 shadow-sm p-5 sm:p-6">
+          <div class="flex items-start justify-between gap-4 mb-6">
+            <div>
+              <h2 class="text-xl font-extrabold text-slate-900">Revenue &amp; Engagement Forecast</h2>
+              <p class="text-sm text-slate-500">Projected business uplift by quest start month.</p>
+            </div>
+            <span class="text-xs font-bold bg-blue-50 text-blue-700 px-3 py-1 rounded-full">Forecast model</span>
+          </div>
+          <div class="h-80"><canvas id="forecastChart"></canvas></div>
+        </div>
+        <div class="bg-white rounded-[1.7rem] border border-slate-200 shadow-sm p-5 sm:p-6">
+          <h2 class="text-xl font-extrabold text-slate-900 mb-1">Quest Mix</h2>
+          <p class="text-sm text-slate-500 mb-6">Active quest distribution by strategic objective.</p>
+          <div class="h-80"><canvas id="categoryMixChart"></canvas></div>
+        </div>
+        <div class="bg-white rounded-[1.7rem] border border-slate-200 shadow-sm p-5 sm:p-6">
+          <h2 class="text-xl font-extrabold text-slate-900 mb-1">Customer Funnel</h2>
+          <p class="text-sm text-slate-500 mb-6">Targeted, participating, and completed quest users.</p>
+          <div class="h-72"><canvas id="funnelChart"></canvas></div>
+        </div>
+        <div class="xl:col-span-2 bg-white rounded-[1.7rem] border border-slate-200 shadow-sm p-5 sm:p-6">
+          <h2 class="text-xl font-extrabold text-slate-900 mb-1">Strategic KPI Scorecard</h2>
+          <p class="text-sm text-slate-500 mb-6">Management view across CASA, services, spending, risk, and social responsibility.</p>
+          <div class="h-72"><canvas id="scorecardChart"></canvas></div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+
+<!-- ── Quest Detail / Confirm Modal ─────────────────────────────────────────── -->
+<div id="questModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 modal-backdrop">
+  <div class="bg-white rounded-[1.7rem] shadow-2xl max-w-2xl w-full overflow-hidden">
+    <div class="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+      <div>
+        <h3 id="modalTitle"    class="text-xl font-extrabold text-slate-900">Quest Details</h3>
+        <p  id="modalSubtitle" class="text-sm text-slate-500"></p>
+      </div>
+      <button id="closeModal" class="w-10 h-10 rounded-xl bg-white border border-slate-200 hover:bg-slate-100"><i class="fas fa-times"></i></button>
+    </div>
+    <div id="modalBody" class="p-6"></div>
+  </div>
+</div>
+
+<!-- ── Reward Create / Edit Modal ───────────────────────────────────────────── -->
+<div id="rewardModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 modal-backdrop">
+  <div class="bg-white rounded-[1.7rem] shadow-2xl max-w-lg w-full max-h-[92vh] overflow-y-auto custom-scrollbar">
+    <div class="p-6 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
+      <h3 id="rewardModalTitle" class="font-extrabold text-slate-900">New Reward</h3>
+      <button id="closeRewardModal" class="w-10 h-10 rounded-xl bg-white border border-slate-200 hover:bg-slate-100"><i class="fas fa-times"></i></button>
+    </div>
+    <form id="rewardForm" class="p-6 space-y-4" novalidate>
+      <input type="hidden" id="rewardId">
+      <div>
+        <label class="text-xs font-bold uppercase tracking-widest text-slate-500">Reward Name</label>
+        <input id="rewardName" required class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-violet-100 focus:border-violet-500" placeholder="e.g. AED 50 Cashback">
+      </div>
+      <div>
+        <label class="text-xs font-bold uppercase tracking-widest text-slate-500">Description</label>
+        <textarea id="rewardDescription" rows="2" class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-violet-100 focus:border-violet-500" placeholder="Brief description of the reward"></textarea>
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="text-xs font-bold uppercase tracking-widest text-slate-500">Type</label>
+          <select id="rewardType" class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-violet-100 focus:border-violet-500">
+            <option>Cashback</option><option>Free Transaction</option><option>Travel Miles</option>
+            <option>Gift Voucher</option><option>Rate Discount</option><option>Prize Draw</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-xs font-bold uppercase tracking-widest text-slate-500">Status</label>
+          <select id="rewardStatus" class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-violet-100 focus:border-violet-500">
+            <option>Active</option><option>Inactive</option><option>Expired</option>
+          </select>
+        </div>
+      </div>
+      <div class="grid grid-cols-3 gap-4">
+        <div>
+          <label class="text-xs font-bold uppercase tracking-widest text-slate-500">Value</label>
+          <input id="rewardValue" type="number" min="0" step="0.01" class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-violet-100 focus:border-violet-500" placeholder="0">
+        </div>
+        <div>
+          <label class="text-xs font-bold uppercase tracking-widest text-slate-500">XP Cost</label>
+          <input id="rewardXpCost" type="number" min="0" class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-violet-100 focus:border-violet-500" placeholder="500">
+        </div>
+        <div>
+          <label class="text-xs font-bold uppercase tracking-widest text-slate-500">Stock (-1=∞)</label>
+          <input id="rewardStock" type="number" min="-1" class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-violet-100 focus:border-violet-500" placeholder="-1">
+        </div>
+      </div>
+      <div id="rewardFormError" class="hidden flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm font-bold">
+        <i class="fas fa-triangle-exclamation flex-shrink-0"></i>
+        <span id="rewardFormErrorText"></span>
+      </div>
+      <div class="flex gap-3 pt-2">
+        <button type="submit" class="flex-1 bg-violet-600 hover:bg-violet-700 text-white py-3 rounded-xl font-bold transition">
+          <i class="fas fa-save mr-2"></i><span id="rewardSaveLabel">Save Reward</span>
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ── Badge Create Modal ────────────────────────────────────────────────────── -->
+<div id="badgeModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 modal-backdrop">
+  <div class="bg-white rounded-[1.7rem] shadow-2xl max-w-md w-full">
+    <div class="p-6 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
+      <h3 class="font-extrabold text-slate-900">New Achievement Badge</h3>
+      <button id="closeBadgeModal" class="w-10 h-10 rounded-xl bg-white border border-slate-200 hover:bg-slate-100"><i class="fas fa-times"></i></button>
+    </div>
+    <form id="badgeForm" class="p-6 space-y-4" novalidate>
+      <div>
+        <label class="text-xs font-bold uppercase tracking-widest text-slate-500">Badge Name</label>
+        <input id="badgeName" required class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500" placeholder="e.g. Quest Starter">
+      </div>
+      <div>
+        <label class="text-xs font-bold uppercase tracking-widest text-slate-500">Description</label>
+        <input id="badgeDescription" class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500" placeholder="What does this badge represent?">
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="text-xs font-bold uppercase tracking-widest text-slate-500">Font Awesome Icon</label>
+          <input id="badgeIcon" class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500" placeholder="fa-medal" value="fa-medal">
+        </div>
+        <div>
+          <label class="text-xs font-bold uppercase tracking-widest text-slate-500">XP Bonus</label>
+          <input id="badgeXpBonus" type="number" min="0" class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500" placeholder="100">
+        </div>
+      </div>
+      <div>
+        <label class="text-xs font-bold uppercase tracking-widest text-slate-500">Award Criteria</label>
+        <input id="badgeCriteria" class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500" placeholder="e.g. Complete 5 quests">
+      </div>
+      <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-bold transition">
+        <i class="fas fa-save mr-2"></i> Create Badge
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- ── Tier Edit Modal ──────────────────────────────────────────────────────── -->
+<div id="tierModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 modal-backdrop">
+  <div class="bg-white rounded-[1.7rem] shadow-2xl max-w-md w-full">
+    <div class="p-6 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
+      <h3 id="tierModalTitle" class="font-extrabold text-slate-900">Edit Tier</h3>
+      <button id="closeTierModal" class="w-10 h-10 rounded-xl bg-white border border-slate-200 hover:bg-slate-100"><i class="fas fa-times"></i></button>
+    </div>
+    <form id="tierForm" class="p-6 space-y-4" novalidate>
+      <input type="hidden" id="tierName">
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="text-xs font-bold uppercase tracking-widest text-slate-500">Min XP</label>
+          <input id="tierXpMin" type="number" min="0" class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500">
+        </div>
+        <div>
+          <label class="text-xs font-bold uppercase tracking-widest text-slate-500">Max XP (leave blank = ∞)</label>
+          <input id="tierXpMax" type="number" min="0" class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500">
+        </div>
+      </div>
+      <div>
+        <label class="text-xs font-bold uppercase tracking-widest text-slate-500">Benefits</label>
+        <textarea id="tierBenefits" rows="3" class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500" placeholder="List tier benefits…"></textarea>
+      </div>
+      <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-bold transition">
+        <i class="fas fa-save mr-2"></i> Save Tier Config
+      </button>
+    </form>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>

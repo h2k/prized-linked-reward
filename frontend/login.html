@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign In – Gamification Admin Platform</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
+    * { box-sizing: border-box; }
+    body { font-family: 'Outfit', sans-serif; }
+  </style>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-slate-950 via-blue-950 to-slate-900 flex items-center justify-center p-4">
+
+  <!-- Background orbs -->
+  <div class="fixed inset-0 pointer-events-none opacity-20" style="background-image:radial-gradient(circle at 15% 20%,#38bdf8 0,transparent 26%),radial-gradient(circle at 85% 5%,#f59e0b 0,transparent 22%),radial-gradient(circle at 70% 80%,#22c55e 0,transparent 24%);"></div>
+
+  <div class="relative w-full max-w-md">
+    <!-- Logo / Brand -->
+    <div class="text-center mb-8">
+      <div class="inline-flex items-center justify-center w-16 h-16 rounded-3xl bg-blue-600 shadow-xl shadow-blue-900/40 mb-4">
+        <i class="fas fa-trophy text-white text-2xl"></i>
+      </div>
+      <h1 class="text-3xl font-extrabold text-white tracking-tight">Gamification Admin</h1>
+      <p class="text-slate-400 mt-1 text-sm">Prize-Linked Quest Management Platform</p>
+    </div>
+
+    <!-- Card -->
+    <div class="bg-white/5 border border-white/10 backdrop-blur-lg rounded-3xl p-8 shadow-2xl">
+      <h2 class="text-xl font-bold text-white mb-6">Sign in to your account</h2>
+
+      <!-- Error banner -->
+      <div id="errorBanner" class="hidden mb-4 flex items-center gap-3 bg-red-500/20 border border-red-500/30 rounded-2xl px-4 py-3 text-red-200 text-sm">
+        <i class="fas fa-circle-exclamation flex-shrink-0"></i>
+        <span id="errorText"></span>
+      </div>
+
+      <form id="loginForm" class="space-y-5" novalidate>
+        <div>
+          <label class="text-xs font-bold uppercase tracking-widest text-slate-400 block mb-2">Username</label>
+          <div class="relative">
+            <i class="fas fa-user absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+            <input id="username" type="text" autocomplete="username" required
+              class="w-full bg-white/10 border border-white/15 text-white placeholder-slate-500 rounded-xl pl-11 pr-4 py-3.5 outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
+              placeholder="admin">
+          </div>
+        </div>
+
+        <div>
+          <label class="text-xs font-bold uppercase tracking-widest text-slate-400 block mb-2">Password</label>
+          <div class="relative">
+            <i class="fas fa-lock absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+            <input id="password" type="password" autocomplete="current-password" required
+              class="w-full bg-white/10 border border-white/15 text-white placeholder-slate-500 rounded-xl pl-11 pr-12 py-3.5 outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
+              placeholder="••••••••">
+            <button type="button" id="togglePassword" class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition">
+              <i class="fas fa-eye text-sm"></i>
+            </button>
+          </div>
+        </div>
+
+        <button type="submit" id="submitBtn"
+          class="w-full bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white py-3.5 rounded-xl font-bold transition shadow-lg shadow-blue-900/30 flex items-center justify-center gap-2">
+          <i class="fas fa-arrow-right-to-bracket"></i>
+          <span id="submitLabel">Sign In</span>
+        </button>
+      </form>
+
+      <p class="text-center text-slate-500 text-xs mt-6">
+        Default credentials: <span class="font-bold text-slate-300">admin / Admin@1234</span>
+      </p>
+    </div>
+  </div>
+
+  <script>
+    const API = window.location.origin;
+
+    // Redirect if already authenticated
+    if (localStorage.getItem('gaq_token')) {
+      window.location.replace('/');
+    }
+
+    document.getElementById('togglePassword').addEventListener('click', () => {
+      const input = document.getElementById('password');
+      const icon  = document.querySelector('#togglePassword i');
+      if (input.type === 'password') { input.type = 'text';     icon.className = 'fas fa-eye-slash text-sm'; }
+      else                           { input.type = 'password'; icon.className = 'fas fa-eye text-sm'; }
+    });
+
+    document.getElementById('loginForm').addEventListener('submit', async e => {
+      e.preventDefault();
+      const username  = document.getElementById('username').value.trim();
+      const password  = document.getElementById('password').value;
+      const btn       = document.getElementById('submitBtn');
+      const label     = document.getElementById('submitLabel');
+      const banner    = document.getElementById('errorBanner');
+      const errorText = document.getElementById('errorText');
+
+      banner.classList.add('hidden');
+      btn.disabled = true;
+      label.textContent = 'Signing in…';
+
+      try {
+        const res = await fetch(`${API}/api/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error || 'Login failed.');
+        }
+
+        localStorage.setItem('gaq_token', data.token);
+        localStorage.setItem('gaq_user',  JSON.stringify(data.user));
+        window.location.replace('/');
+      } catch (err) {
+        errorText.textContent = err.message;
+        banner.classList.remove('hidden');
+        banner.classList.add('flex');
+      } finally {
+        btn.disabled = false;
+        label.textContent = 'Sign In';
+      }
+    });
+  </script>
+</body>
+</html>
