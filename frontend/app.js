@@ -28,8 +28,11 @@ let allQuests      = [];
 let allCustomers   = [];
 let kpiData        = {};
 let chartData      = {};
+let txData         = {};  // transaction quest success data
 let calendarDate   = new Date();
 let calendarView   = 'month';
+let yearSubView    = 'grid';
+let yearGroupBy    = 'none';
 const charts       = {};
 let allRewards     = [];
 let allBadges      = [];
@@ -80,19 +83,21 @@ async function apiFetch(path, options = {}) {
 // ── Load all data from API ────────────────────────────────────────────────────
 async function loadAll() {
   try {
-    const [questsRes, customersRes, kpis, charts_, loyaltySum, rewardsRes, badgesRes] = await Promise.all([
+    const [questsRes, customersRes, kpis, charts_, loyaltySum, rewardsRes, badgesRes, txRes] = await Promise.all([
       apiFetch('/api/quests?limit=200'),
       apiFetch('/api/customers'),
       apiFetch('/api/analytics/kpis'),
       apiFetch('/api/analytics/charts'),
       apiFetch('/api/loyalty/summary'),
       apiFetch('/api/loyalty/rewards'),
-      apiFetch('/api/loyalty/badges')
+      apiFetch('/api/loyalty/badges'),
+      apiFetch('/api/analytics/transaction-success')
     ]);
     allQuests      = questsRes.data  || [];
     allCustomers   = customersRes.data || [];
     kpiData        = kpis     || {};
     chartData      = charts_  || {};
+    txData         = txRes    || {};
     loyaltySummary = loyaltySum || {};
     allRewards     = rewardsRes.data || [];
     allBadges      = badgesRes.data  || [];
@@ -110,6 +115,8 @@ function showToast(msg, type = 'success') {
   byId('toastMsg').textContent = msg;
   icon.className = type === 'error'
     ? 'fas fa-circle-xmark text-red-400'
+    : type === 'info'
+    ? 'fas fa-circle-info text-blue-400'
     : 'fas fa-check-circle text-emerald-400';
   el.classList.remove('hide');
   clearTimeout(toastTimeout);
@@ -125,6 +132,7 @@ function renderAll() {
   renderCustomerRanking();
   renderLoyaltySection();
   renderCharts();
+  renderTransactionSuccess();
 }
 
 // ── KPIs ──────────────────────────────────────────────────────────────────────
@@ -194,13 +202,51 @@ function renderCalendar() {
   const year   = calendarDate.getFullYear();
   const month  = calendarDate.getMonth();
   const visible = calendarFilteredQuests();
+  const todayKey = toDateKey(new Date());
   let dates = [], periodStart, periodEnd;
+
+  if (calendarView === 'year') {
+    byId('calendarDayHeaders').style.display = 'none';
+    byId('yearSubToolbar').classList.remove('hidden');
+    byId('calendarGrid').className = '';
+    byId('monthLabel').textContent = String(year);
+    periodStart = new Date(year, 0, 1);
+    periodEnd   = new Date(year, 11, 31);
+    // Sync sub-view button states
+    document.querySelectorAll('.year-sub-btn').forEach(btn => {
+      const a = btn.dataset.sub === yearSubView;
+      btn.classList.toggle('bg-white',       a);
+      btn.classList.toggle('text-blue-700',  a);
+      btn.classList.toggle('shadow-sm',      a);
+      btn.classList.toggle('text-slate-500', !a);
+    });
+    // Group-by only relevant for timeline
+    const gbWrap = byId('yearGroupByWrap');
+    if (gbWrap) { yearSubView === 'timeline' ? gbWrap.classList.remove('hidden') : gbWrap.classList.add('hidden'); }
+    // Year-specific show filter
+    const yShow  = byId('yearShowFilter')?.value || 'all';
+    const yStart = `${year}-01-01`, yEnd = `${year}-12-31`;
+    let yearVisible = visible;
+    if (yShow === 'active') yearVisible = visible.filter(q => q.start_date <= todayKey && q.end_date >= todayKey);
+    if (yShow === 'starts') yearVisible = visible.filter(q => q.start_date >= yStart && q.start_date <= yEnd);
+    if (yShow === 'ends')   yearVisible = visible.filter(q => q.end_date   >= yStart && q.end_date   <= yEnd);
+    byId('calendarGrid').innerHTML = renderYearViewHTML(year, yearVisible, todayKey);
+    renderCalendarSummary(yearVisible, periodStart, periodEnd);
+    byId('calendarPeriodLabel').textContent = `Full Year ${year}`;
+    renderCalendarLegend();
+    renderCalendarAgenda(yearVisible, periodStart, periodEnd);
+    return;
+  }
+
+  byId('yearSubToolbar').classList.add('hidden');
+  byId('calendarDayHeaders').style.display = '';
+  byId('calendarGrid').className = 'grid grid-cols-7';
 
   if (calendarView === 'week') {
     periodStart = startOfWeek(calendarDate);
     periodEnd   = addDays(periodStart, 6);
     dates = Array.from({ length: 7 }, (_, i) => addDays(periodStart, i));
-    byId('monthLabel').textContent = `${formatDate(toDateKey(periodStart))} – ${formatDate(toDateKey(periodEnd))}`;
+    byId('monthLabel').textContent = `${formatDate(toDateKey(periodStart))} – ${formatDate(toDateKey(periodEnd))}, ${periodEnd.getFullYear()}`;
   } else {
     const firstDay    = new Date(year, month, 1).getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -213,8 +259,6 @@ function renderCalendar() {
     });
     byId('monthLabel').textContent = calendarDate.toLocaleString('en-US', { month: 'long', year: 'numeric' });
   }
-
-  const todayKey = toDateKey(new Date());
 
   byId('calendarGrid').innerHTML = dates.map(date => {
     if (!date) return '<div class="calendar-cell border-r border-b border-slate-100 bg-slate-50/60"></div>';
@@ -295,6 +339,56 @@ function renderCalendarLegend() {
 function renderCalendarAgenda(visible, periodStart, periodEnd) {
   const startKey = toDateKey(periodStart);
   const endKey   = toDateKey(periodEnd);
+
+  if (calendarView === 'year') {
+    const year = periodStart.getFullYear();
+    byId('calendarAgendaTitle').textContent = `Annual Quest Roster — ${year}`;
+    byId('calendarAgendaSub').textContent   = 'All quests organised by quarter. Click any quest to view details.';
+    const quarters = [
+      { label: 'Q1 — Jan – Mar', badge: 'text-violet-700 bg-violet-50', dot: 'bg-violet-400', start: `${year}-01-01`, end: `${year}-03-31`, jumpM: 0 },
+      { label: 'Q2 — Apr – Jun', badge: 'text-blue-700 bg-blue-50',     dot: 'bg-blue-400',   start: `${year}-04-01`, end: `${year}-06-30`, jumpM: 3 },
+      { label: 'Q3 — Jul – Sep', badge: 'text-emerald-700 bg-emerald-50',dot:'bg-emerald-400', start: `${year}-07-01`, end: `${year}-09-30`, jumpM: 6 },
+      { label: 'Q4 — Oct – Dec', badge: 'text-orange-700 bg-orange-50', dot: 'bg-orange-400',  start: `${year}-10-01`, end: `${year}-12-31`, jumpM: 9 },
+    ];
+    byId('calendarAgenda').innerHTML = quarters.map((qt, qi) => {
+      const qQuests = visible
+        .filter(q => q.end_date >= qt.start && q.start_date <= qt.end)
+        .sort((a, b) => new Date(a.start_date) - new Date(b.start_date));
+      const qRev  = qQuests.reduce((s, q) => s + (q.revenue || 0), 0);
+      const qComp = qQuests.length ? Math.round(qQuests.reduce((s, q) => s + (q.completion || 0), 0) / qQuests.length) : 0;
+      return `
+        <div class="rounded-2xl bg-white border border-slate-200 p-4 flex flex-col gap-3">
+          <div class="flex items-center justify-between gap-2 flex-wrap">
+            <div class="flex items-center gap-2">
+              <div class="w-2.5 h-2.5 rounded-full flex-shrink-0 ${qt.dot}"></div>
+              <span class="font-extrabold text-slate-900">${qt.label}</span>
+            </div>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="text-xs font-bold ${qt.badge} px-2 py-0.5 rounded-full">${qQuests.length} quest${qQuests.length !== 1 ? 's' : ''}</span>
+              <span class="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">${money(qRev)}</span>
+              ${qQuests.length ? `<span class="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">${qComp}% avg</span>` : ''}
+            </div>
+          </div>
+          ${qQuests.length ? `
+          <div class="divide-y divide-slate-50">
+            ${qQuests.slice(0, 5).map(q => {
+              const cat = categories[q.category];
+              return `<button onclick="openQuestDetails('${q.id}')" class="w-full text-left flex items-center gap-2 py-1.5 px-1 rounded-lg hover:bg-slate-50 transition">
+                <span class="w-2 h-2 rounded-full flex-shrink-0 ${cat.bg} border ${cat.border}"></span>
+                <span class="text-xs font-bold text-slate-800 truncate flex-1">${q.title}</span>
+                <span class="text-[10px] text-slate-400 flex-shrink-0 hidden sm:block">${formatDate(q.start_date)}</span>
+                <span class="text-[9px] font-bold flex-shrink-0 px-1.5 py-0.5 rounded ${cat.bg} ${cat.text}">${cat.short}</span>
+              </button>`;
+            }).join('')}
+            ${qQuests.length > 5 ? `<button onclick="jumpToMonth(${year}, ${qt.jumpM})" class="w-full text-left text-[10px] font-bold text-blue-600 hover:text-blue-800 pt-2 pl-1">+${qQuests.length - 5} more — open Q${qi + 1} →</button>` : ''}
+          </div>` : '<div class="text-xs text-slate-400 text-center py-3 bg-slate-50 rounded-xl">No quests this quarter</div>'}
+        </div>`;
+    }).join('');
+    return;
+  }
+
+  byId('calendarAgendaTitle').textContent = 'Upcoming Launch Agenda';
+  byId('calendarAgendaSub').textContent   = 'Next scheduled starts in the selected period.';
   const launches = visible.filter(q => q.start_date >= startKey && q.start_date <= endKey)
     .sort((a, b) => new Date(a.start_date) - new Date(b.start_date));
   byId('calendarAgenda').innerHTML = launches.length
@@ -309,6 +403,606 @@ function renderCalendarAgenda(visible, periodStart, periodEnd) {
         </button>`;
       }).join('')
     : '<div class="lg:col-span-2 rounded-2xl bg-white border border-dashed border-slate-200 p-6 text-center text-slate-500">No launches match the current calendar filters.</div>';
+}
+
+function renderYearViewHTML(year, visible, todayKey) {
+  if (yearSubView === 'timeline') return renderYearTimelineHTML(year, visible, todayKey);
+  if (yearSubView === 'stats')    return renderYearStatsHTML(year, visible);
+  return renderYearMonthsHTML(year, visible, todayKey);
+}
+
+function renderYearHeatmap(year, visible, todayKey) {
+  const pad = n => String(n).padStart(2, '0');
+  // Build day → count map for the whole year
+  const dayMap = {};
+  let cur = new Date(year, 0, 1);
+  while (cur.getFullYear() === year) {
+    const key = toDateKey(cur);
+    dayMap[key] = visible.filter(q => key >= q.start_date && key <= q.end_date).length;
+    cur.setDate(cur.getDate() + 1);
+  }
+  // Build week columns starting from Sunday on/before Jan 1
+  const jan1 = new Date(year, 0, 1);
+  const gridStart = startOfWeek(jan1);
+  const weeks = [];
+  cur = new Date(gridStart);
+  while (true) {
+    const week = [];
+    for (let i = 0; i < 7; i++) {
+      const key    = toDateKey(cur);
+      const inYear = cur.getFullYear() === year;
+      week.push({ key, inYear, count: inYear ? (dayMap[key] || 0) : -1, month: cur.getMonth(), day: cur.getDate() });
+      cur.setDate(cur.getDate() + 1);
+    }
+    weeks.push(week);
+    if (cur > new Date(year, 11, 31)) break;
+  }
+  // Month labels positioned at first-of-month week columns
+  const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const monthLabelAt = {};
+  weeks.forEach((week, wi) => {
+    week.forEach(cell => { if (cell.inYear && cell.day === 1) monthLabelAt[wi] = MONTH_ABBR[cell.month]; });
+  });
+  const heatColor = c => c < 0 ? 'bg-transparent' : c === 0 ? 'bg-slate-100' : c === 1 ? 'bg-blue-200' : c <= 3 ? 'bg-blue-400' : c <= 5 ? 'bg-violet-500' : 'bg-red-500';
+  const DOW_LABELS = ['','M','','W','','F',''];
+  return `
+    <div class="p-4 sm:p-6 bg-gradient-to-br from-slate-50 to-white border-b border-slate-100">
+      <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
+        <div>
+          <div class="flex items-center gap-2 mb-0.5">
+            <i class="fas fa-fire-flame-curved text-orange-500"></i>
+            <span class="text-xs font-extrabold uppercase tracking-widest text-slate-700">Quest Activity Heatmap — ${year}</span>
+          </div>
+          <div class="text-[11px] text-slate-400 pl-5">Each cell = one day · color intensity = concurrent active quests</div>
+        </div>
+        <div class="flex items-center gap-1.5 text-[10px] text-slate-500 font-bold">
+          <span>Less</span>
+          <div class="w-3 h-3 rounded-sm bg-slate-100 border border-slate-200"></div>
+          <div class="w-3 h-3 rounded-sm bg-blue-200"></div>
+          <div class="w-3 h-3 rounded-sm bg-blue-400"></div>
+          <div class="w-3 h-3 rounded-sm bg-violet-500"></div>
+          <div class="w-3 h-3 rounded-sm bg-red-500"></div>
+          <span>More</span>
+        </div>
+      </div>
+      <div class="flex gap-0.5 overflow-x-auto pb-1 select-none">
+        <div class="flex flex-col gap-0.5 mr-1 flex-shrink-0">
+          <div class="h-4"></div>
+          ${DOW_LABELS.map(l => `<div class="w-4 h-[11px] text-[8px] text-slate-400 font-bold flex items-center justify-end pr-0.5">${l}</div>`).join('')}
+        </div>
+        ${weeks.map((week, wi) => `
+          <div class="flex flex-col gap-0.5 flex-shrink-0">
+            <div class="h-4 text-[8px] text-slate-500 font-bold flex items-end pb-0.5 whitespace-nowrap">${monthLabelAt[wi] || ''}</div>
+            ${week.map(cell => {
+              const isToday = cell.key === todayKey;
+              return `<div class="w-[11px] h-[11px] rounded-sm ${heatColor(cell.count)}${isToday ? ' ring-2 ring-offset-0 ring-blue-500' : ''}" title="${cell.key}${cell.count > 0 ? ': ' + cell.count + ' quest' + (cell.count !== 1 ? 's' : '') : ': no quests'}"></div>`;
+            }).join('')}
+          </div>`).join('')}
+      </div>
+    </div>`;
+}
+
+function renderYearTimelineHTML(year, visible, todayKey) {
+  const MONTHS_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const isLeap  = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  const totalDays = isLeap ? 366 : 365;
+  const yStart  = `${year}-01-01`, yEnd = `${year}-12-31`;
+  const MONTH_DAYS = [31, isLeap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+  // Month header positions
+  let cumDays = 0;
+  const monthHeaders = MONTHS_ABBR.map((name, i) => {
+    const left  = (cumDays / totalDays * 100).toFixed(2);
+    const width = (MONTH_DAYS[i] / totalDays * 100).toFixed(2);
+    cumDays += MONTH_DAYS[i];
+    return { name, left, width };
+  });
+
+  // Today line
+  const todayInYear  = todayKey >= yStart && todayKey <= yEnd;
+  const todayDayNum  = todayInYear ? Math.floor((new Date(todayKey + 'T00:00:00') - new Date(yStart + 'T00:00:00')) / 86400000) : -1;
+  const todayLeftPct = todayDayNum >= 0 ? (todayDayNum / totalDays * 100).toFixed(2) : null;
+
+  // Quests overlapping the year
+  const yearQuests = visible
+    .filter(q => q.end_date >= yStart && q.start_date <= yEnd)
+    .sort((a, b) => a.start_date.localeCompare(b.start_date));
+
+  // Grouping
+  const gBy = yearGroupBy;
+  let groups;
+  if (gBy === 'category') {
+    const map = {};
+    yearQuests.forEach(q => { (map[q.category] = map[q.category] || []).push(q); });
+    groups = Object.keys(categories).filter(k => map[k]).map(k => ({
+      label: categories[k].label, quests: map[k],
+      accentBg: categories[k].bg, accentText: categories[k].text,
+    }));
+  } else if (gBy === 'status') {
+    const order  = ['Live','Scheduled','Draft','Paused','Completed'];
+    const styles = { Live:'text-green-700', Scheduled:'text-blue-700', Draft:'text-slate-600', Paused:'text-amber-700', Completed:'text-violet-700' };
+    const map    = {};
+    yearQuests.forEach(q => { (map[q.status] = map[q.status] || []).push(q); });
+    groups = order.filter(s => map[s]).map(s => ({ label: s, quests: map[s], accentText: styles[s] }));
+  } else if (gBy === 'segment') {
+    const map = {};
+    yearQuests.forEach(q => { (map[q.segment] = map[q.segment] || []).push(q); });
+    groups = Object.keys(map).sort().map(k => ({ label: k, quests: map[k], accentText: 'text-slate-600' }));
+  } else {
+    groups = [{ label: null, quests: yearQuests }];
+  }
+
+  function questBarHTML(q) {
+    const cat   = categories[q.category];
+    const qs    = q.start_date < yStart ? yStart : q.start_date;
+    const qe    = q.end_date   > yEnd   ? yEnd   : q.end_date;
+    const sd    = Math.floor((new Date(qs + 'T00:00:00') - new Date(yStart + 'T00:00:00')) / 86400000);
+    const ed    = Math.floor((new Date(qe + 'T00:00:00') - new Date(yStart + 'T00:00:00')) / 86400000);
+    const left  = (sd / totalDays * 100).toFixed(2);
+    const width = Math.max(0.4, ((ed - sd + 1) / totalDays * 100)).toFixed(2);
+    const live  = q.status === 'Live';
+    return `<div class="absolute inset-y-1.5 rounded-md flex items-center px-2 overflow-hidden cursor-pointer
+                        ${cat.bg} border ${cat.border}${live ? ' ring-1 ring-green-400' : ''} hover:brightness-95 transition"
+                 style="left:${left}%;width:${width}%"
+                 onclick="openQuestDetails('${q.id}')"
+                 title="${q.title} | ${q.start_date} → ${q.end_date} | ${q.status}">
+              <span class="text-[9px] font-bold ${cat.text} truncate whitespace-nowrap">${q.title}</span>
+            </div>`;
+  }
+
+  const todayLineHTML = todayLeftPct !== null
+    ? `<div class="absolute top-0 bottom-0 w-px bg-blue-500/50 pointer-events-none z-10" style="left:${todayLeftPct}%"></div>`
+    : '';
+
+  const headerRowHTML = `
+    <div class="flex border-b-2 border-slate-200 bg-slate-50 sticky top-0 z-20">
+      <div class="w-44 flex-shrink-0 px-3 py-2 text-[9px] font-extrabold uppercase tracking-widest text-slate-400 border-r border-slate-200 sticky left-0 bg-slate-50 z-30">Quest</div>
+      <div class="relative flex-1 h-8 overflow-hidden">
+        ${monthHeaders.map(mh => `
+          <div class="absolute top-0 bottom-0 flex items-center px-1 border-l border-slate-200"
+               style="left:${mh.left}%;width:${mh.width}%">
+            <span class="text-[9px] font-extrabold uppercase tracking-widest text-slate-500 truncate">${mh.name}</span>
+          </div>`).join('')}
+        ${todayLeftPct !== null ? `
+        <div class="absolute top-0 bottom-[-9999px] w-px bg-blue-500/60 z-10 pointer-events-none" style="left:${todayLeftPct}%">
+          <span class="absolute top-0.5 left-1 text-[8px] font-extrabold text-blue-600 bg-blue-50 px-1 rounded whitespace-nowrap">Today</span>
+        </div>` : ''}
+      </div>
+    </div>`;
+
+  const rowsHTML = groups.map(g => {
+    const gHeader = g.label ? `
+      <div class="flex border-b border-slate-100 bg-slate-50/90">
+        <div class="w-44 flex-shrink-0 px-3 py-1.5 border-r border-slate-100 sticky left-0 bg-slate-50/90 z-10">
+          <span class="text-[9px] font-extrabold uppercase tracking-widest ${g.accentText || 'text-slate-500'}">${g.label}</span>
+          <span class="text-[9px] text-slate-400 ml-1">${g.quests.length}</span>
+        </div>
+        <div class="relative flex-1 ${g.accentBg || ''}"></div>
+      </div>` : '';
+    const questRows = g.quests.map(q => `
+      <div class="flex items-stretch min-h-[40px] border-b border-slate-50 hover:bg-blue-50/30 transition-colors">
+        <div class="w-44 flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 border-r border-slate-100 bg-white sticky left-0 z-10">
+          <span class="w-2 h-2 rounded-full flex-shrink-0 ${categories[q.category]?.bg} border ${categories[q.category]?.border}"></span>
+          <span class="text-[10px] font-bold text-slate-700 truncate" title="${q.title}">${q.title}</span>
+        </div>
+        <div class="relative flex-1">
+          ${questBarHTML(q)}
+          ${todayLineHTML}
+        </div>
+      </div>`).join('');
+    return gHeader + questRows;
+  }).join('');
+
+  return `
+    <div class="p-4 sm:p-6 bg-white border-b border-slate-100">
+      <div class="flex items-center justify-between gap-3 mb-4 flex-wrap">
+        <div class="flex items-center gap-2">
+          <i class="fas fa-bars-staggered text-violet-600"></i>
+          <span class="text-xs font-extrabold uppercase tracking-widest text-slate-700">Campaign Timeline — ${year}</span>
+        </div>
+        <span class="text-[10px] font-bold text-slate-500 bg-slate-100 px-3 py-1 rounded-full">${yearQuests.length} quest${yearQuests.length !== 1 ? 's' : ''} overlapping this year</span>
+      </div>
+      <div class="rounded-2xl border border-slate-200 overflow-hidden overflow-x-auto">
+        ${headerRowHTML}
+        <div>${yearQuests.length ? rowsHTML : '<div class="py-14 text-center text-slate-400 text-sm">No quests match the current filters for this year.</div>'}</div>
+      </div>
+    </div>`;
+}
+
+function renderYearStatsHTML(year, visible) {
+  const MONTHS_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const isLeap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  const pad = n => String(n).padStart(2, '0');
+
+  const monthly = MONTHS_ABBR.map((name, m) => {
+    const dIM = new Date(year, m + 1, 0).getDate();
+    const ms  = `${year}-${pad(m + 1)}-01`;
+    const me  = `${year}-${pad(m + 1)}-${pad(dIM)}`;
+    const mq  = visible.filter(q => q.end_date >= ms && q.start_date <= me);
+    return {
+      name,
+      count:     mq.length,
+      launches:  mq.filter(q => q.start_date >= ms && q.start_date <= me).length,
+      revenue:   mq.reduce((s, q) => s + (q.revenue  || 0), 0),
+      customers: mq.reduce((s, q) => s + Math.round(q.target * (q.completion || 0) / 100), 0),
+    };
+  });
+
+  const maxCount  = Math.max(...monthly.map(d => d.count), 1);
+  const maxRev    = Math.max(...monthly.map(d => d.revenue), 1);
+  const maxLaunch = Math.max(...monthly.map(d => d.launches), 1);
+  const maxCust   = Math.max(...monthly.map(d => d.customers), 1);
+
+  // Breakdowns
+  const catMap  = {}, statMap  = {}, segMap  = {};
+  visible.forEach(q => {
+    catMap[q.category] = (catMap[q.category]   || 0) + 1;
+    statMap[q.status]  = (statMap[q.status]     || 0) + 1;
+    segMap[q.segment]  = (segMap[q.segment]     || 0) + 1;
+  });
+  const total = visible.length || 1;
+  const catBarColor = { casa:'bg-blue-500', engagement:'bg-violet-500', spending:'bg-orange-500', risk:'bg-red-500', socialresponsibility:'bg-green-500' };
+  const statBarColor = { Live:'bg-green-500', Scheduled:'bg-blue-500', Draft:'bg-slate-400', Paused:'bg-amber-500', Completed:'bg-violet-500' };
+
+  // Quarterly totals
+  const qDefs = [
+    { q:'Q1', months:[0,1,2], badge:'text-violet-700 bg-violet-50', border:'border-t-2 border-violet-200' },
+    { q:'Q2', months:[3,4,5], badge:'text-blue-700 bg-blue-50',     border:'border-t-2 border-blue-200' },
+    { q:'Q3', months:[6,7,8], badge:'text-emerald-700 bg-emerald-50', border:'border-t-2 border-emerald-200' },
+    { q:'Q4', months:[9,10,11], badge:'text-orange-700 bg-orange-50', border:'border-t-2 border-orange-200' },
+  ];
+  const qStats = qDefs.map(qt => {
+    const qm = qt.months.map(i => monthly[i]);
+    return { ...qt,
+      count:    Math.max(...qm.map(d => d.count), 0),
+      launches: qm.reduce((s, d) => s + d.launches, 0),
+      revenue:  qm.reduce((s, d) => s + d.revenue, 0),
+    };
+  });
+
+  function barChartHTML(data, key, colorCls, maxVal, fmt) {
+    return '<div class="flex items-end gap-[3px] h-24 pt-2">' +
+      data.map(d => {
+        const v = d[key];
+        const h = maxVal > 0 ? Math.max(2, Math.round((v / maxVal) * 80)) : 2;
+        return `<div class="flex flex-col items-center flex-1 gap-0.5">
+          <div class="text-[7px] text-slate-400 font-bold leading-none">${v && fmt ? fmt(v) : (v || '')}</div>
+          <div class="${colorCls} rounded-t w-full transition-all" style="height:${h}px"></div>
+          <div class="text-[7px] text-slate-400 font-bold mt-0.5">${d.name}</div>
+        </div>`;
+      }).join('') + '</div>';
+  }
+
+  function hBarHTML(label, count, total, colorCls) {
+    const pct = Math.max(2, Math.round(count / total * 100));
+    return `<div class="flex items-center gap-2">
+      <div class="w-24 text-[10px] font-bold text-slate-600 truncate" title="${label}">${label}</div>
+      <div class="flex-1 bg-slate-100 rounded-full h-2.5 overflow-hidden">
+        <div class="${colorCls} h-full rounded-full" style="width:${pct}%"></div>
+      </div>
+      <div class="text-[10px] font-extrabold text-slate-700 w-6 text-right">${count}</div>
+    </div>`;
+  }
+
+  return `
+    <div class="p-4 sm:p-6 bg-white border-b border-slate-100 space-y-6">
+      <div class="flex items-center gap-2">
+        <i class="fas fa-chart-column text-blue-600 text-sm"></i>
+        <span class="text-xs font-extrabold uppercase tracking-widest text-slate-700">Year Statistics — ${year}</span>
+        <span class="text-[10px] text-slate-400 ml-1">${visible.length} quest${visible.length !== 1 ? 's' : ''}</span>
+      </div>
+
+      <!-- Quarterly summary cards -->
+      <div class="grid grid-cols-2 xl:grid-cols-4 gap-3">
+        ${qStats.map(q => `
+          <div class="rounded-2xl bg-slate-50 border border-slate-100 p-4 ${q.border}">
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-[10px] font-extrabold ${q.badge} px-2 py-0.5 rounded-full">${q.q}</span>
+              <span class="text-2xl font-extrabold text-slate-900">${q.count}</span>
+            </div>
+            <div class="grid grid-cols-2 gap-1 text-center">
+              <div class="rounded-xl bg-white p-1.5 border border-slate-100">
+                <div class="text-[10px] font-extrabold text-violet-700">${q.launches}</div>
+                <div class="text-[8px] text-slate-400 font-bold">starts</div>
+              </div>
+              <div class="rounded-xl bg-white p-1.5 border border-slate-100">
+                <div class="text-[10px] font-extrabold text-emerald-700">${money(q.revenue)}</div>
+                <div class="text-[8px] text-slate-400 font-bold">revenue</div>
+              </div>
+            </div>
+          </div>`).join('')}
+      </div>
+
+      <!-- 4 bar charts -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+        <div class="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-extrabold text-slate-700">Active Quests / Month</span>
+            <i class="fas fa-calendar-check text-blue-500 text-xs"></i>
+          </div>
+          <div class="text-[10px] text-slate-400 mb-2">Concurrent quests per month</div>
+          ${barChartHTML(monthly, 'count', 'bg-blue-400', maxCount, null)}
+        </div>
+        <div class="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-extrabold text-slate-700">New Launches / Month</span>
+            <i class="fas fa-rocket text-violet-500 text-xs"></i>
+          </div>
+          <div class="text-[10px] text-slate-400 mb-2">Quests starting each month</div>
+          ${barChartHTML(monthly, 'launches', 'bg-violet-400', maxLaunch, null)}
+        </div>
+        <div class="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-extrabold text-slate-700">Revenue Forecast / Month</span>
+            <i class="fas fa-sack-dollar text-emerald-500 text-xs"></i>
+          </div>
+          <div class="text-[10px] text-slate-400 mb-2">Forecast revenue from active quests</div>
+          ${barChartHTML(monthly, 'revenue', 'bg-emerald-400', maxRev, v => '$' + compact(v))}
+        </div>
+        <div class="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-extrabold text-slate-700">Customers Engaged / Month</span>
+            <i class="fas fa-users text-orange-500 text-xs"></i>
+          </div>
+          <div class="text-[10px] text-slate-400 mb-2">Estimated participants per month</div>
+          ${barChartHTML(monthly, 'customers', 'bg-orange-400', maxCust, v => compact(v))}
+        </div>
+      </div>
+
+      <!-- Breakdown bars -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-5">
+        <div class="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+          <div class="flex items-center gap-2 mb-3">
+            <i class="fas fa-layer-group text-xs text-slate-500"></i>
+            <span class="text-xs font-extrabold text-slate-700">By Category</span>
+          </div>
+          <div class="space-y-2">
+            ${Object.entries(catMap).sort((a,b)=>b[1]-a[1]).map(([k,cnt]) =>
+              hBarHTML(categories[k]?.label || k, cnt, total, catBarColor[k] || 'bg-slate-400')
+            ).join('') || '<div class="text-xs text-slate-400 text-center py-3">No data</div>'}
+          </div>
+        </div>
+        <div class="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+          <div class="flex items-center gap-2 mb-3">
+            <i class="fas fa-circle-half-stroke text-xs text-slate-500"></i>
+            <span class="text-xs font-extrabold text-slate-700">By Status</span>
+          </div>
+          <div class="space-y-2">
+            ${Object.entries(statMap).sort((a,b)=>b[1]-a[1]).map(([s,cnt]) =>
+              hBarHTML(s, cnt, total, statBarColor[s] || 'bg-slate-400')
+            ).join('') || '<div class="text-xs text-slate-400 text-center py-3">No data</div>'}
+          </div>
+        </div>
+        <div class="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+          <div class="flex items-center gap-2 mb-3">
+            <i class="fas fa-users-between-lines text-xs text-slate-500"></i>
+            <span class="text-xs font-extrabold text-slate-700">By Segment</span>
+          </div>
+          <div class="space-y-2">
+            ${Object.entries(segMap).sort((a,b)=>b[1]-a[1]).map(([seg,cnt]) =>
+              hBarHTML(seg, cnt, total, 'bg-sky-400')
+            ).join('') || '<div class="text-xs text-slate-400 text-center py-3">No data</div>'}
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderYearMonthsHTML(year, visible, todayKey) {
+  const MONTHS  = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const Q_LABEL = ['Q1','Q2','Q3','Q4'];
+  const Q_COLOR = ['#7c3aed','#2563eb','#059669','#ea580c'];
+  const STATUS_C = { Live:'#22c55e', Scheduled:'#3b82f6', Draft:'#94a3b8', Paused:'#f59e0b', Completed:'#8b5cf6' };
+  const pad = n => String(n).padStart(2, '0');
+
+  // ── Year-level KPI banner ────────────────────────────────────────────────
+  const yStart = `${year}-01-01`, yEnd = `${year}-12-31`;
+  const yQ       = visible.filter(q => q.end_date >= yStart && q.start_date <= yEnd);
+  const yRev     = yQ.reduce((s, q) => s + (q.revenue || 0), 0);
+  const yLive    = yQ.filter(q => q.status === 'Live').length;
+  const yComp    = yQ.length ? Math.round(yQ.reduce((s, q) => s + (q.completion || 0), 0) / yQ.length) : 0;
+  const yLaunch  = yQ.filter(q => q.start_date >= yStart && q.start_date <= yEnd).length;
+  const yComplet = yQ.filter(q => q.status === 'Completed').length;
+
+  const kpis = [
+    { icon:'fa-layer-group',    label:'Campaigns',  val: yQ.length,          color:'#334155' },
+    { icon:'fa-rocket',         label:'Launched',   val: yLaunch,            color:'#7c3aed' },
+    { icon:'fa-circle-dot',     label:'Live Now',   val: yLive,              color:'#16a34a' },
+    { icon:'fa-flag-checkered', label:'Completed',  val: yComplet,           color:'#8b5cf6' },
+    { icon:'fa-sack-dollar',    label:'Revenue',    val: money(yRev),        color:'#059669' },
+    { icon:'fa-chart-pie',      label:'Avg Done',   val: yComp + '%',        color:'#2563eb' },
+  ];
+
+  const summaryBar = `
+    <div class="flex flex-wrap items-center gap-6 px-6 py-4 bg-white border-b border-slate-200">
+      <div class="flex items-baseline gap-2 mr-2">
+        <span class="text-3xl font-black text-slate-900">${year}</span>
+        <span class="text-xs font-bold text-slate-400 uppercase tracking-wide">Grid View</span>
+      </div>
+      <div class="flex flex-wrap gap-5 ml-auto">
+        ${kpis.map(k => `
+          <div class="flex items-center gap-2">
+            <div class="w-7 h-7 rounded-lg flex items-center justify-center" style="background:${k.color}18">
+              <i class="fas ${k.icon} text-[11px]" style="color:${k.color}"></i>
+            </div>
+            <div>
+              <div class="text-[9px] font-bold text-slate-400 leading-none uppercase tracking-wide">${k.label}</div>
+              <div class="text-sm font-extrabold leading-snug" style="color:${k.color}">${k.val}</div>
+            </div>
+          </div>`).join('')}
+      </div>
+    </div>`;
+
+  // ── Month cards ──────────────────────────────────────────────────────────
+  const cards = MONTHS.map((monthName, m) => {
+    const firstDow   = new Date(year, m, 1).getDay();
+    const dIM        = new Date(year, m + 1, 0).getDate();
+    const monthStart = `${year}-${pad(m + 1)}-01`;
+    const monthEnd   = `${year}-${pad(m + 1)}-${pad(dIM)}`;
+    const mQuests    = visible.filter(q => q.end_date >= monthStart && q.start_date <= monthEnd);
+    const isCurrent  = todayKey.startsWith(`${year}-${pad(m + 1)}`);
+    const isPast     = !isCurrent && monthEnd < todayKey;
+    const revenue    = mQuests.reduce((s, q) => s + (q.revenue || 0), 0);
+    const liveCount  = mQuests.filter(q => q.status === 'Live').length;
+    const launches   = mQuests.filter(q => q.start_date >= monthStart && q.start_date <= monthEnd).length;
+    const avgComp    = mQuests.length ? Math.round(mQuests.reduce((s, q) => s + (q.completion || 0), 0) / mQuests.length) : 0;
+    const qi         = Math.floor(m / 3);
+    const qColor     = isCurrent ? '#2563eb' : Q_COLOR[qi];
+
+    // Day-density heatmap strip
+    const dayCells = Array.from({ length: dIM }, (_, i) => {
+      const day = i + 1;
+      const dk  = `${year}-${pad(m + 1)}-${pad(day)}`;
+      const cnt = visible.filter(q => dk >= q.start_date && dk <= q.end_date).length;
+      const isToday = dk === todayKey;
+      const bg = isToday ? qColor : qColor;
+      const op = isToday ? 1 : cnt === 0 ? 0.07 : cnt === 1 ? 0.28 : cnt === 2 ? 0.52 : cnt <= 4 ? 0.72 : 0.95;
+      const outline = isToday ? `outline:2px solid ${qColor};outline-offset:-1px;border-radius:2px;` : '';
+      return `<div class="h-full flex-shrink-0" style="background:${bg};opacity:${op};${outline}" title="${dk}: ${cnt} quest${cnt !== 1 ? 's' : ''}"></div>`;
+    }).join('');
+
+    // Week activity bars (up to 6 weeks)
+    const weeks = [];
+    for (let w = 0; w < 6; w++) {
+      let wMax = 0, hasDay = false;
+      for (let d = 0; d < 7; d++) {
+        const day = w * 7 + d - firstDow + 1;
+        if (day >= 1 && day <= dIM) {
+          hasDay = true;
+          const dk = `${year}-${pad(m + 1)}-${pad(day)}`;
+          const cnt = visible.filter(q => dk >= q.start_date && dk <= q.end_date).length;
+          wMax = Math.max(wMax, cnt);
+        }
+      }
+      if (hasDay) weeks.push(wMax);
+    }
+    const maxW = Math.max(...weeks, 1);
+
+    // Top quests (prioritise Live → Scheduled, up to 3)
+    const topQ = [...mQuests]
+      .sort((a, b) => {
+        const order = { Live:0, Scheduled:1, Paused:2, Completed:3, Draft:4 };
+        return (order[a.status] ?? 9) - (order[b.status] ?? 9);
+      })
+      .slice(0, 3);
+
+    // Status breakdown chips
+    const statusChips = ['Live','Scheduled','Completed','Paused','Draft']
+      .map(s => ({ s, cnt: mQuests.filter(q => q.status === s).length }))
+      .filter(x => x.cnt > 0)
+      .map(x => `<span class="flex items-center gap-1 text-[9px] font-bold rounded-full px-1.5 py-0.5"
+                       style="background:${STATUS_C[x.s]}18;color:${STATUS_C[x.s]}">
+          <span class="w-1 h-1 rounded-full flex-shrink-0" style="background:${STATUS_C[x.s]}"></span>${x.cnt} ${x.s}
+        </span>`).join('');
+
+    const borderClass = isCurrent
+      ? 'border-2 border-blue-400 shadow-xl shadow-blue-100/60'
+      : 'border border-slate-200 hover:border-slate-300 hover:shadow-xl hover:shadow-slate-200/60';
+
+    return `
+      <div class="bg-white rounded-2xl ${borderClass} transition-all duration-200 cursor-pointer group overflow-hidden flex flex-col"
+           onclick="jumpToMonth(${year}, ${m})">
+
+        <!-- Quarter color accent bar -->
+        <div class="h-1.5 w-full" style="background:${qColor}"></div>
+
+        <!-- Header: month + count -->
+        <div class="flex items-start justify-between px-4 pt-3 pb-1.5">
+          <div>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="font-black text-slate-900 text-base leading-none">${monthName}</span>
+              ${isCurrent ? `<span class="text-[9px] font-black text-white px-1.5 py-0.5 rounded-full leading-none" style="background:${qColor}">NOW</span>` : ''}
+            </div>
+            <div class="text-[9px] font-semibold text-slate-400 mt-0.5">${Q_LABEL[qi]} · ${isPast ? 'Past' : isCurrent ? 'Current' : 'Upcoming'}</div>
+          </div>
+          <div class="text-right flex-shrink-0 ml-2">
+            <div class="text-2xl font-black leading-none ${mQuests.length ? 'text-slate-900' : 'text-slate-200'}">${mQuests.length}</div>
+            <div class="text-[8px] font-bold text-slate-400 leading-none">quests</div>
+          </div>
+        </div>
+
+        <!-- Day heatmap strip -->
+        <div class="px-3 pb-1.5">
+          <div class="text-[8px] font-bold text-slate-300 mb-0.5 uppercase tracking-wide">Daily activity</div>
+          <div class="flex gap-px rounded overflow-hidden" style="height:10px">${dayCells}</div>
+        </div>
+
+        <!-- Week activity bars -->
+        <div class="px-3 pb-2">
+          <div class="text-[8px] font-bold text-slate-300 mb-1 uppercase tracking-wide">Weekly load</div>
+          <div class="flex items-end gap-0.5" style="height:36px">
+            ${weeks.map((h, wi) => {
+              const pct = Math.max(6, Math.round((h / maxW) * 100));
+              const op  = h === 0 ? 0.1 : 0.65;
+              return `<div class="flex-1 rounded-t-sm transition-all" style="height:${pct}%;background:${qColor};opacity:${op}" title="Wk ${wi + 1}: ${h} active quests"></div>`;
+            }).join('')}
+          </div>
+          <div class="flex mt-0.5">
+            ${weeks.map((_, wi) => `<div class="flex-1 text-center text-[7px] text-slate-300 font-semibold">W${wi + 1}</div>`).join('')}
+          </div>
+        </div>
+
+        <!-- Campaign list -->
+        <div class="px-3 space-y-1 pb-2 flex-1" style="min-height:3.5rem">
+          ${topQ.length
+            ? topQ.map(q => {
+                const cat = categories[q.category] || { bg:'bg-slate-100', text:'text-slate-600', icon:'fa-circle' };
+                const sc  = STATUS_C[q.status] || '#94a3b8';
+                return `<div class="flex items-center gap-1.5 text-[9px] font-bold rounded-lg px-2 py-1 ${cat.bg} ${cat.text} overflow-hidden">
+                  <i class="fas ${cat.icon} text-[8px] flex-shrink-0"></i>
+                  <span class="truncate flex-1">${q.title}</span>
+                  <span class="flex-shrink-0 w-1.5 h-1.5 rounded-full" style="background:${sc}" title="${q.status}"></span>
+                </div>`;
+              }).join('')
+            : `<div class="text-[9px] italic text-slate-200 px-1">No campaigns this month</div>`}
+        </div>
+
+        <!-- Completion progress bar -->
+        ${mQuests.length ? `
+        <div class="px-3 pb-2">
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-[8px] font-bold text-slate-400 uppercase tracking-wide">Avg completion</span>
+            <span class="text-[9px] font-extrabold" style="color:${qColor}">${avgComp}%</span>
+          </div>
+          <div class="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+            <div class="h-full rounded-full" style="width:${avgComp}%;background:${qColor}"></div>
+          </div>
+        </div>` : ''}
+
+        <!-- Status chips -->
+        ${mQuests.length ? `
+        <div class="px-3 pb-2 flex flex-wrap gap-1">${statusChips}</div>` : ''}
+
+        <!-- Footer: launches · live · revenue -->
+        <div class="px-4 py-2.5 border-t border-slate-100 bg-slate-50/70 flex items-center justify-between gap-2">
+          <div class="flex flex-wrap gap-x-2.5 gap-y-0.5 text-[9px] font-bold">
+            ${launches ? `<span class="text-violet-600"><i class="fas fa-rocket mr-0.5"></i>${launches} launch${launches > 1 ? 'es' : ''}</span>` : ''}
+            ${liveCount ? `<span class="text-green-600"><i class="fas fa-circle-dot mr-0.5"></i>${liveCount} live</span>` : ''}
+            ${!launches && !liveCount ? `<span class="text-slate-300">—</span>` : ''}
+          </div>
+          <span class="text-[9px] font-extrabold flex-shrink-0 ${mQuests.length ? 'text-emerald-700' : 'text-slate-300'}">${mQuests.length ? money(revenue) : ''}</span>
+        </div>
+
+        <!-- Hover CTA -->
+        <div class="h-0 group-hover:h-7 overflow-hidden flex items-center justify-center gap-1.5 text-[9px] font-extrabold text-white transition-all duration-150" style="background:${qColor}">
+          <i class="fas fa-calendar-days text-[8px]"></i> Open ${monthName}
+        </div>
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="overflow-hidden rounded-xl border border-slate-200 shadow-sm bg-white">
+      ${summaryBar}
+      <div class="p-5 sm:p-6 bg-slate-50/50">
+        <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4">${cards}</div>
+      </div>
+    </div>`;
+}
+
+function jumpToMonth(year, m) {
+  calendarDate = new Date(year, m, 1);
+  calendarView = 'month';
+  renderCalendar();
 }
 
 // ── Quest table ───────────────────────────────────────────────────────────────
@@ -456,6 +1150,113 @@ function renderCharts() {
 }
 
 function upsertChart(id, config) { if (charts[id]) charts[id].destroy(); charts[id] = new Chart(byId(id), config); }
+
+// ── Transaction Quest Success Rates ───────────────────────────────────────────
+function renderTransactionSuccess() {
+  const d = txData;
+  if (!d || !d.summary) return;
+
+  const { summary, byQuest = [], bySegment = [], topCustomers = [] } = d;
+
+  // Summary KPI chips
+  const successColor = summary.avgSuccessRate >= 70 ? 'emerald' : summary.avgSuccessRate >= 50 ? 'amber' : 'red';
+  byId('txSummaryKpis').innerHTML = [
+    { label: 'Tx Quests',       value: summary.totalTransactionQuests,    color: 'blue'         },
+    { label: 'Avg Success Rate', value: `${summary.avgSuccessRate}%`,      color: successColor   },
+    { label: 'Participants',     value: compact(summary.totalParticipants), color: 'violet'       },
+    { label: 'Target Pool',      value: compact(summary.totalTarget),       color: 'slate'        }
+  ].map(k => `
+    <div class="bg-${k.color}-50 border border-${k.color}-100 rounded-2xl px-4 py-2 text-center">
+      <div class="text-lg font-extrabold text-${k.color}-700">${k.value}</div>
+      <div class="text-[10px] font-bold text-${k.color}-500 uppercase tracking-wider">${k.label}</div>
+    </div>`).join('');
+
+  // Per-quest horizontal bar chart
+  const BAR_COLORS = byQuest.map(q =>
+    q.category === 'spending' ? 'rgba(245,158,11,0.75)' : 'rgba(99,102,241,0.75)'
+  );
+  upsertChart('txQuestChart', {
+    type: 'bar',
+    data: {
+      labels: byQuest.map(q => q.title.length > 28 ? q.title.slice(0, 26) + '…' : q.title),
+      datasets: [{
+        label: 'Completion %',
+        data:  byQuest.map(q => q.completion),
+        backgroundColor: BAR_COLORS,
+        borderRadius: 8,
+        borderSkipped: false
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const q = byQuest[ctx.dataIndex];
+              return [
+                ` Completion: ${q.completion}%`,
+                ` Participants: ${compact(q.participants)}`,
+                ` Segment: ${q.segment}`,
+                ` Status: ${q.status}`
+              ];
+            }
+          }
+        }
+      },
+      scales: {
+        x: { min: 0, max: 100, grid: { color: '#f1f5f9' }, ticks: { callback: v => `${v}%` } },
+        y: { grid: { display: false }, ticks: { font: { size: 11 } } }
+      }
+    }
+  });
+
+  // Per-segment table
+  const segRows = bySegment.map((s, i) => {
+    const pct = s.questAvgCompletion;
+    const bar = `<div class="w-full bg-slate-100 rounded-full h-2 mt-1"><div class="h-2 rounded-full ${pct >= 70 ? 'bg-emerald-500' : pct >= 50 ? 'bg-amber-400' : 'bg-red-400'}" style="width:${pct}%"></div></div>`;
+    const custBadge = s.customerCount
+      ? `<span class="text-[10px] font-bold bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">${s.customerCount} customers</span>`
+      : '';
+    return `
+      <div class="bg-slate-50 rounded-xl p-3">
+        <div class="flex items-center justify-between gap-2 mb-1">
+          <span class="text-xs font-bold text-slate-800 truncate">${s.segment}</span>
+          <span class="text-sm font-extrabold ${pct >= 70 ? 'text-emerald-600' : pct >= 50 ? 'text-amber-600' : 'text-red-600'}">${pct}%</span>
+        </div>
+        ${bar}
+        <div class="flex items-center justify-between mt-2 gap-2">
+          <span class="text-[10px] text-slate-500">${s.questCount} quest${s.questCount !== 1 ? 's' : ''} · ${compact(s.totalParticipants)} participants</span>
+          ${custBadge}
+        </div>
+      </div>`;
+  }).join('');
+  byId('txSegmentTable').innerHTML = segRows || '<p class="text-sm text-slate-400">No segment data.</p>';
+
+  // Top customers table
+  const TIER_COLORS = { Diamond: 'text-blue-600 bg-blue-50', Platinum: 'text-purple-600 bg-purple-50', Gold: 'text-amber-600 bg-amber-50', Silver: 'text-slate-600 bg-slate-100' };
+  byId('txTopCustomers').innerHTML = topCustomers.map((c, i) => {
+    const tierStyle = TIER_COLORS[c.tier] || 'text-slate-600 bg-slate-100';
+    const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`;
+    return `<tr class="hover:bg-slate-50 transition">
+      <td class="p-3 font-extrabold text-slate-500">${medal}</td>
+      <td class="p-3 font-bold text-slate-900">${c.name}</td>
+      <td class="p-3 text-slate-500 text-xs">${c.segment}</td>
+      <td class="p-3"><span class="px-2 py-1 rounded-full text-xs font-extrabold ${tierStyle}">${c.tier}</span></td>
+      <td class="p-3">
+        <div class="flex items-center gap-2">
+          <div class="w-24 bg-slate-100 rounded-full h-2"><div class="h-2 rounded-full bg-emerald-500" style="width:${c.completion}%"></div></div>
+          <span class="text-xs font-bold text-emerald-700">${c.completion}%</span>
+        </div>
+      </td>
+      <td class="p-3 font-bold text-slate-700">${c.quests_done}</td>
+      <td class="p-3 font-bold text-indigo-700">${compact(c.xp)} XP</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="7" class="p-4 text-sm text-slate-400 text-center">No customer data.</td></tr>';
+}
 
 function chartOptions({ dualAxis = false, horizontal = false } = {}) {
   const compact_ = v => compact(v);
@@ -643,12 +1444,14 @@ async function handleSubmit(event) {
 
 async function reloadAnalytics() {
   try {
-    const [kpis, charts_] = await Promise.all([
+    const [kpis, charts_, txRes] = await Promise.all([
       apiFetch('/api/analytics/kpis'),
-      apiFetch('/api/analytics/charts')
+      apiFetch('/api/analytics/charts'),
+      apiFetch('/api/analytics/transaction-success')
     ]);
     kpiData   = kpis   || {};
     chartData = charts_ || {};
+    txData    = txRes  || {};
   } catch { /* fail silently – charts just won't update */ }
 }
 
@@ -993,6 +1796,32 @@ async function deleteBadge(id) {
   } catch (err) { showToast(err.message || 'Failed to delete badge.', 'error'); }
 }
 
+/**
+ * Evaluate all badge rules against all customers and award any new achievements.
+ * Shows a toast with a summary of newly awarded badges.
+ */
+async function evaluateAchievements() {
+  const btn = document.getElementById('btnEvaluate');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Evaluating…'; }
+  try {
+    const result = await apiFetch('/api/loyalty/achievements/evaluate', { method: 'POST' });
+    const msg = result.newAwards === 0
+      ? `Evaluated ${result.evaluated} customers – all badges already up to date.`
+      : `Awarded ${result.newAwards} new badge${result.newAwards !== 1 ? 's' : ''} across ${result.evaluated} customers!`;
+    showToast(msg, result.newAwards > 0 ? 'success' : 'info');
+    // Refresh badge award counts
+    const badgeData = await apiFetch('/api/loyalty/badges');
+    allBadges = badgeData.data;
+    loyaltySummary.totalBadgesAwarded = (loyaltySummary.totalBadgesAwarded || 0) + result.newAwards;
+    renderBadges();
+    renderLoyaltyKpis();
+  } catch (err) {
+    showToast(err.message || 'Failed to evaluate achievements.', 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-bolt mr-2"></i> Evaluate All'; }
+  }
+}
+
 // ── Populate dropdowns ────────────────────────────────────────────────────────
 function populateSelects() {
   const categoryOptions = Object.entries(categories).map(([k, c]) => `<option value="${k}">${c.label}</option>`).join('');
@@ -1023,12 +1852,15 @@ function bindEvents() {
   byId('customerRowsPerPage').addEventListener('change', e => { tableState.customers.pageSize = e.target.value === 'all' ? 'all' : Number(e.target.value); tableState.customers.page = 1; renderCustomerRanking(); });
   document.querySelectorAll('.customer-sort').forEach(btn => btn.addEventListener('click', () => { const dir = tableState.customers.sortKey === btn.dataset.sort && tableState.customers.sortDirection === 'asc' ? 'desc' : 'asc'; tableState.customers.sortKey = btn.dataset.sort; tableState.customers.sortDirection = dir; tableState.customers.page = 1; renderCustomerRanking(); }));
 
-  byId('prevMonth').addEventListener('click', () => { calendarView === 'week' ? calendarDate.setDate(calendarDate.getDate() - 7) : calendarDate.setMonth(calendarDate.getMonth() - 1); renderCalendar(); });
-  byId('nextMonth').addEventListener('click', () => { calendarView === 'week' ? calendarDate.setDate(calendarDate.getDate() + 7) : calendarDate.setMonth(calendarDate.getMonth() + 1); renderCalendar(); });
+  byId('prevMonth').addEventListener('click', () => { if (calendarView === 'year') calendarDate.setFullYear(calendarDate.getFullYear() - 1); else if (calendarView === 'week') calendarDate.setDate(calendarDate.getDate() - 7); else calendarDate.setMonth(calendarDate.getMonth() - 1); renderCalendar(); });
+  byId('nextMonth').addEventListener('click', () => { if (calendarView === 'year') calendarDate.setFullYear(calendarDate.getFullYear() + 1); else if (calendarView === 'week') calendarDate.setDate(calendarDate.getDate() + 7); else calendarDate.setMonth(calendarDate.getMonth() + 1); renderCalendar(); });
   byId('todayButton').addEventListener('click', () => { calendarDate = new Date(); renderCalendar(); });
   byId('calendarCategoryFilter').addEventListener('change', renderCalendar);
   byId('calendarStatusFilter').addEventListener('change',   renderCalendar);
   document.querySelectorAll('.calendar-view-btn').forEach(btn => btn.addEventListener('click', () => { calendarView = btn.dataset.view; renderCalendar(); }));
+  document.querySelectorAll('.year-sub-btn').forEach(btn => btn.addEventListener('click', () => { yearSubView = btn.dataset.sub; renderCalendar(); }));
+  byId('yearGroupBy').addEventListener('change',    e => { yearGroupBy = e.target.value; renderCalendar(); });
+  byId('yearShowFilter').addEventListener('change', renderCalendar);
 
   byId('openQuestForgeInline').addEventListener('click', openQuestForgeModal);
   byId('closeQuestForge').addEventListener('click',      closeQuestForgeModal);
@@ -1075,8 +1907,9 @@ window.openDayAgenda    = openDayAgenda;
 window.openRewardModal = openRewardModal;
 window.deleteReward    = deleteReward;
 window.openTierModal   = openTierModal;
-window.openBadgeModal  = openBadgeModal;
-window.deleteBadge     = deleteBadge;
+window.openBadgeModal        = openBadgeModal;
+window.deleteBadge           = deleteBadge;
+window.evaluateAchievements  = evaluateAchievements;
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 populateSelects();

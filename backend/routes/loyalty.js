@@ -232,4 +232,161 @@ router.delete('/badges/:id', authenticate, async (req, res) => {
   }
 });
 
+// ── Achievement Engine ────────────────────────────────────────────────────────
+
+/**
+ * Evaluate a single badge rule against a customer record.
+ *
+ * Rule schema:  { field: string, op: 'gte'|'lte'|'eq'|'in', value: any }
+ *
+ * Supported fields (customer columns):
+ *   quests_done  – total quests completed
+ *   xp           – total experience points
+ *   completion   – average completion % (0-100)
+ *   tier         – loyalty tier string
+ *
+ * Supported ops:
+ *   gte  – customer[field] >= value
+ *   lte  – customer[field] <= value
+ *   eq   – customer[field] === value
+ *   in   – value array includes customer[field]
+ */
+function evaluateRule(rule, customer) {
+  if (!rule || !rule.field || !rule.op) return false;
+  const actual = customer[rule.field];
+  if (actual === undefined || actual === null) return false;
+  switch (rule.op) {
+    case 'gte': return actual >= rule.value;
+    case 'lte': return actual <= rule.value;
+    case 'eq':  return actual === rule.value;
+    case 'in':  return Array.isArray(rule.value) && rule.value.includes(actual);
+    default:    return false;
+  }
+}
+
+/**
+ * POST /api/loyalty/achievements/evaluate
+ *
+ * Scans all customers and all badges. For each customer × badge pair not yet
+ * awarded, evaluates the badge rule. Awards matching badges and returns a
+ * summary: { evaluated, newAwards, details[] }
+ *
+ * Optional body: { customer_id: "..." } to limit evaluation to one customer.
+ */
+router.post('/achievements/evaluate', authenticate, async (req, res) => {
+  try {
+    const db = getDynamo();
+    const [badges, existingAwards] = await Promise.all([
+      db.scan(TABLES.BADGES),
+      db.scan(TABLES.CUSTOMER_BADGES)
+    ]);
+
+    // Only evaluate badges that have a rule
+    const ruleableBadges = badges.filter(b => b.rule);
+    if (!ruleableBadges.length) {
+      return res.json({ evaluated: 0, newAwards: 0, details: [], message: 'No badges with rules defined.' });
+    }
+
+    // Build a Set of already-awarded pairs for O(1) lookup
+    const awarded = new Set(existingAwards.map(a => `${a.customer_id}:${a.badge_id}`));
+
+    // Fetch customers (optionally filtered to one)
+    let customers = await db.scan(TABLES.CUSTOMERS);
+    const { customer_id } = req.body || {};
+    if (customer_id) customers = customers.filter(c => c.id === customer_id);
+
+    const newAwards  = [];
+    const now        = new Date().toISOString();
+
+    for (const customer of customers) {
+      for (const badge of ruleableBadges) {
+        const key = `${customer.id}:${badge.id}`;
+        if (awarded.has(key)) continue;                       // already earned
+        if (!evaluateRule(badge.rule, customer)) continue;   // does not qualify
+
+        await db.put(TABLES.CUSTOMER_BADGES, {
+          customer_id: customer.id,
+          badge_id:    badge.id,
+          awarded_at:  now
+        });
+        awarded.add(key);
+        newAwards.push({ customer_id: customer.id, customer_name: customer.name, badge_id: badge.id, badge_name: badge.name });
+      }
+    }
+
+    res.json({
+      evaluated:  customers.length,
+      newAwards:  newAwards.length,
+      details:    newAwards
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to evaluate achievements.' });
+  }
+});
+
+/**
+ * GET /api/customers/:id/achievements
+ *
+ * Returns all badges split into earned (with awarded_at) and locked (with
+ * progress info showing how close the customer is to unlocking).
+ */
+router.get('/achievements/:customer_id', authenticate, async (req, res) => {
+  try {
+    const db       = getDynamo();
+    const customer = await db.get(TABLES.CUSTOMERS, { id: req.params.customer_id });
+    if (!customer) return res.status(404).json({ error: 'Customer not found.' });
+
+    const [badges, customerBadges] = await Promise.all([
+      db.scan(TABLES.BADGES),
+      db.scan(TABLES.CUSTOMER_BADGES)
+    ]);
+
+    const earnedSet = new Map(
+      customerBadges
+        .filter(cb => cb.customer_id === req.params.customer_id)
+        .map(cb => [cb.badge_id, cb])
+    );
+
+    const earned = [];
+    const locked = [];
+
+    for (const badge of badges) {
+      const award = earnedSet.get(badge.id);
+      if (award) {
+        earned.push({ ...badge, awarded_at: award.awarded_at });
+      } else {
+        // Calculate progress toward the rule (for display)
+        const progress = badge.rule ? computeProgress(badge.rule, customer) : null;
+        locked.push({ ...badge, progress });
+      }
+    }
+
+    res.json({ customer: { id: customer.id, name: customer.name, xp: customer.xp, tier: customer.tier, quests_done: customer.quests_done, completion: customer.completion }, earned, locked });
+  } catch {
+    res.status(500).json({ error: 'Failed to fetch achievements.' });
+  }
+});
+
+/**
+ * Compute a 0-100 progress percentage toward a badge rule.
+ * Returns null if the rule type doesn't support progress.
+ */
+function computeProgress(rule, customer) {
+  const actual = customer[rule.field];
+  if (actual === undefined || actual === null) return { pct: 0, current: 0, target: rule.value };
+  switch (rule.op) {
+    case 'gte':
+      return { pct: Math.min(100, Math.round((actual / rule.value) * 100)), current: actual, target: rule.value };
+    case 'lte':
+      return { pct: actual <= rule.value ? 100 : 0, current: actual, target: rule.value };
+    case 'eq':
+      return { pct: actual === rule.value ? 100 : 0, current: actual, target: rule.value };
+    case 'in':
+      return { pct: Array.isArray(rule.value) && rule.value.includes(actual) ? 100 : 0, current: actual, target: rule.value };
+    default:
+      return null;
+  }
+}
+
 module.exports = router;

@@ -101,4 +101,103 @@ router.get('/charts', authenticate, async (_req, res) => {
   } catch { res.status(500).json({ error: 'Failed to compute chart data.' }); }
 });
 
+// GET /api/analytics/transaction-success
+// Maps transaction-related quests (spending + casa categories) to customer data
+// and calculates success rates per quest, per segment, and top performers.
+router.get('/transaction-success', authenticate, async (_req, res) => {
+  try {
+    const TRANSACTION_CATS = ['spending', 'casa'];
+
+    const [quests, customers] = await Promise.all([
+      getDynamo().scan(TABLES.QUESTS),
+      getDynamo().scan(TABLES.CUSTOMERS)
+    ]);
+
+    const txQuests = quests.filter(q => TRANSACTION_CATS.includes(q.category));
+
+    if (!txQuests.length) {
+      return res.json({ summary: { totalTransactionQuests: 0, avgSuccessRate: 0, totalParticipants: 0, totalTarget: 0 }, byQuest: [], bySegment: [], topCustomers: [] });
+    }
+
+    // ── Per-quest breakdown ─────────────────────────────────────────────────
+    const byQuest = txQuests.map(q => ({
+      id:          q.id,
+      title:       q.title,
+      category:    q.category,
+      segment:     q.segment,
+      status:      q.status,
+      completion:  q.completion,               // % from quest record
+      target:      q.target,
+      participants: Math.round(q.target * q.completion / 100),
+      revenue:     q.revenue
+    })).sort((a, b) => b.completion - a.completion);
+
+    // ── Per-segment breakdown ───────────────────────────────────────────────
+    // Group transaction quests by segment; find matching customers.
+    const segmentMap = {};
+    txQuests.forEach(q => {
+      if (!segmentMap[q.segment]) segmentMap[q.segment] = { quests: [], customers: [] };
+      segmentMap[q.segment].quests.push(q);
+    });
+    customers.forEach(c => {
+      if (segmentMap[c.segment]) segmentMap[c.segment].customers.push(c);
+    });
+
+    const bySegment = Object.entries(segmentMap).map(([segment, data]) => {
+      const questAvgCompletion = data.quests.length
+        ? Math.round(data.quests.reduce((s, q) => s + q.completion, 0) / data.quests.length)
+        : 0;
+      const customerAvgCompletion = data.customers.length
+        ? Math.round(data.customers.reduce((s, c) => s + c.completion, 0) / data.customers.length)
+        : null;
+      const totalParticipants = data.quests.reduce((s, q) => s + Math.round(q.target * q.completion / 100), 0);
+      return {
+        segment,
+        questCount:              data.quests.length,
+        customerCount:           data.customers.length,
+        questAvgCompletion,      // avg quest completion% for this segment's tx quests
+        customerAvgCompletion,   // avg customer.completion for this segment (or null)
+        totalParticipants
+      };
+    }).sort((a, b) => b.questAvgCompletion - a.questAvgCompletion);
+
+    // ── Top customers for transaction quests ────────────────────────────────
+    // Rank customers whose segment has at least one transaction quest,
+    // sorted by (completion desc, quests_done desc).
+    const txSegments = new Set(txQuests.map(q => q.segment));
+    const topCustomers = customers
+      .filter(c => txSegments.has(c.segment))
+      .sort((a, b) => b.completion - a.completion || b.quests_done - a.quests_done)
+      .slice(0, 10)
+      .map(c => ({
+        name:        c.name,
+        segment:     c.segment,
+        tier:        c.tier,
+        completion:  c.completion,
+        quests_done: c.quests_done,
+        xp:          c.xp
+      }));
+
+    // ── Summary ─────────────────────────────────────────────────────────────
+    const avgSuccessRate = Math.round(txQuests.reduce((s, q) => s + q.completion, 0) / txQuests.length);
+    const totalParticipants = txQuests.reduce((s, q) => s + Math.round(q.target * q.completion / 100), 0);
+    const totalTarget = txQuests.reduce((s, q) => s + q.target, 0);
+
+    res.json({
+      summary: {
+        totalTransactionQuests: txQuests.length,
+        avgSuccessRate,
+        totalParticipants,
+        totalTarget
+      },
+      byQuest,
+      bySegment,
+      topCustomers
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to compute transaction success data.' });
+  }
+});
+
 module.exports = router;

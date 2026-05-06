@@ -52,15 +52,31 @@ const rewardsData = [
 ];
 
 const badgesData = [
-  { name: 'Quest Starter',   description: 'Completed your very first quest',                   icon: 'fa-star',                 criteria: 'Complete 1 quest',                          xp_bonus: 50  },
-  { name: 'Quest Streak ×5', description: 'Completed 5 quests back-to-back',                  icon: 'fa-fire',                 criteria: 'Complete 5 consecutive quests',              xp_bonus: 150 },
-  { name: 'CASA Champion',   description: 'Completed 3 CASA improvement quests',              icon: 'fa-piggy-bank',           criteria: 'Complete 3 CASA quests',                     xp_bonus: 200 },
-  { name: 'Big Saver',       description: 'Maintained a high balance for 3 months',           icon: 'fa-vault',                criteria: 'Maintain balance > AED 50k for 3 months',    xp_bonus: 250 },
-  { name: 'Digital Native',  description: 'Completed all digital-channel engagement quests',  icon: 'fa-mobile-screen-button', criteria: 'Complete all engagement quests',              xp_bonus: 100 },
-  { name: 'Green Hero',      description: 'Champion of social responsibility',                 icon: 'fa-leaf',                 criteria: 'Complete 2 social responsibility quests',     xp_bonus: 150 },
-  { name: 'Risk Guardian',   description: 'Completed all risk reduction quests',              icon: 'fa-shield-halved',        criteria: 'Complete 3 risk quests',                     xp_bonus: 175 },
-  { name: 'Diamond Elite',   description: 'Reached the highest loyalty tier',                 icon: 'fa-gem',                  criteria: 'Accumulate 10,000+ XP',                      xp_bonus: 500 }
+  { name: 'Quest Starter',   description: 'Completed your very first quest',                   icon: 'fa-star',                 criteria: 'Complete 1 quest',                          xp_bonus: 50,  rule: { field: 'quests_done', op: 'gte', value: 1    } },
+  { name: 'Quest Streak ×5', description: 'Completed 5 quests back-to-back',                  icon: 'fa-fire',                 criteria: 'Complete 5 quests',                         xp_bonus: 150, rule: { field: 'quests_done', op: 'gte', value: 5    } },
+  { name: 'CASA Champion',   description: 'Completed 3 CASA improvement quests',              icon: 'fa-piggy-bank',           criteria: 'Complete 10 quests total',                  xp_bonus: 200, rule: { field: 'quests_done', op: 'gte', value: 10   } },
+  { name: 'Big Saver',       description: 'Maintained a high balance for 3 months',           icon: 'fa-vault',                criteria: 'Reach Gold tier or above',                  xp_bonus: 250, rule: { field: 'tier',        op: 'in',  value: ['Gold', 'Platinum', 'Diamond'] } },
+  { name: 'Digital Native',  description: 'Completed all digital-channel engagement quests',  icon: 'fa-mobile-screen-button', criteria: 'Reach 85% average completion',               xp_bonus: 100, rule: { field: 'completion',  op: 'gte', value: 85   } },
+  { name: 'Green Hero',      description: 'Champion of social responsibility',                 icon: 'fa-leaf',                 criteria: 'Reach Platinum tier or above',               xp_bonus: 150, rule: { field: 'tier',        op: 'in',  value: ['Platinum', 'Diamond'] } },
+  { name: 'Risk Guardian',   description: 'Completed all risk reduction quests',              icon: 'fa-shield-halved',        criteria: 'Complete 12 quests total',                  xp_bonus: 175, rule: { field: 'quests_done', op: 'gte', value: 12   } },
+  { name: 'Diamond Elite',   description: 'Reached the highest loyalty tier',                 icon: 'fa-gem',                  criteria: 'Accumulate 10,000+ XP',                     xp_bonus: 500, rule: { field: 'xp',          op: 'gte', value: 10000 } }
 ];
+
+/**
+ * Evaluate a single badge rule against a customer record.
+ * Supported ops: gte (>=), lte (<=), eq (===), in (array includes)
+ */
+function evaluateRule(rule, customer) {
+  const actual = customer[rule.field];
+  if (actual === undefined || actual === null) return false;
+  switch (rule.op) {
+    case 'gte': return actual >= rule.value;
+    case 'lte': return actual <= rule.value;
+    case 'eq':  return actual === rule.value;
+    case 'in':  return Array.isArray(rule.value) && rule.value.includes(actual);
+    default:    return false;
+  }
+}
 
 async function clearTable(db, table, keyFn) {
   const items = await db.scan(table);
@@ -111,15 +127,20 @@ async function main() {
   }
   console.log(`  ${badgesData.length} badges inserted.`);
 
-  console.log('\nAssigning badges to customers…');
-  let assignments = 0;
-  for (const c of insertedCustomers) {
-    if (c.quests_done >= 1)                              { await db.put(TABLES.CUSTOMER_BADGES, { customer_id: c.id, badge_id: badgeIds[0] }); assignments++; }
-    if (c.quests_done >= 5)                              { await db.put(TABLES.CUSTOMER_BADGES, { customer_id: c.id, badge_id: badgeIds[1] }); assignments++; }
-    if (c.tier === 'Diamond' || c.tier === 'Platinum')   { await db.put(TABLES.CUSTOMER_BADGES, { customer_id: c.id, badge_id: badgeIds[2] }); assignments++; }
-    if (c.tier === 'Diamond')                            { await db.put(TABLES.CUSTOMER_BADGES, { customer_id: c.id, badge_id: badgeIds[7] }); assignments++; }
+  console.log('\nEvaluating achievements for all customers…');
+  const allBadges    = await db.scan(TABLES.BADGES);
+  const allCustomers = await db.scan(TABLES.CUSTOMERS);
+  let assignments    = 0;
+  for (const customer of allCustomers) {
+    for (const badge of allBadges) {
+      if (!badge.rule) continue;
+      if (evaluateRule(badge.rule, customer)) {
+        await db.put(TABLES.CUSTOMER_BADGES, { customer_id: customer.id, badge_id: badge.id });
+        assignments++;
+      }
+    }
   }
-  console.log(`  ${assignments} badge assignments inserted.`);
+  console.log(`  ${assignments} badge assignments awarded.`);
 
   console.log('\nSeed completed successfully.');
   process.exit(0);

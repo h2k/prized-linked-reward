@@ -200,12 +200,43 @@
               <div class="flex rounded-xl bg-slate-100 p-1">
                 <button id="monthViewButton" class="calendar-view-btn px-4 py-2 rounded-lg text-sm font-bold bg-white text-blue-700 shadow-sm" data-view="month">Month</button>
                 <button id="weekViewButton"  class="calendar-view-btn px-4 py-2 rounded-lg text-sm font-bold text-slate-500" data-view="week">Week</button>
+                <button id="yearViewButton"  class="calendar-view-btn px-4 py-2 rounded-lg text-sm font-bold text-slate-500" data-view="year">Year</button>
               </div>
             </div>
             <div id="calendarSummary" class="grid grid-cols-2 lg:grid-cols-4 gap-3"></div>
             <div id="calendarLegend" class="flex flex-wrap gap-2 text-xs font-bold"></div>
           </div>
-          <div class="grid grid-cols-7 bg-slate-100/70 text-[10px] sm:text-xs font-extrabold uppercase tracking-widest text-slate-500">
+
+          <!-- ── Year-only sub-toolbar ─────────────────────────────────────── -->
+          <div id="yearSubToolbar" class="hidden px-4 sm:px-5 py-3 border-b border-slate-100 bg-white flex flex-wrap items-center justify-between gap-3">
+            <div class="flex rounded-xl bg-slate-100 p-1">
+              <button class="year-sub-btn px-3 py-1.5 rounded-lg text-xs font-bold bg-white text-blue-700 shadow-sm" data-sub="grid"><i class="fas fa-grid-2 mr-1.5"></i>Grid</button>
+              <button class="year-sub-btn px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500" data-sub="timeline"><i class="fas fa-bars-staggered mr-1.5"></i>Timeline</button>
+              <button class="year-sub-btn px-3 py-1.5 rounded-lg text-xs font-bold text-slate-500" data-sub="stats"><i class="fas fa-chart-column mr-1.5"></i>Stats</button>
+            </div>
+            <div class="flex items-center gap-3 flex-wrap">
+              <div id="yearGroupByWrap" class="hidden flex items-center gap-1.5">
+                <span class="text-[10px] font-bold uppercase tracking-widest text-slate-400">Group by</span>
+                <select id="yearGroupBy" class="rounded-lg border border-slate-200 px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400">
+                  <option value="none">None</option>
+                  <option value="category">Category</option>
+                  <option value="status">Status</option>
+                  <option value="segment">Segment</option>
+                </select>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <span class="text-[10px] font-bold uppercase tracking-widest text-slate-400">Show</span>
+                <select id="yearShowFilter" class="rounded-lg border border-slate-200 px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400">
+                  <option value="all">All quests</option>
+                  <option value="active">Active now</option>
+                  <option value="starts">Starts this year</option>
+                  <option value="ends">Ends this year</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div id="calendarDayHeaders" class="grid grid-cols-7 bg-slate-100/70 text-[10px] sm:text-xs font-extrabold uppercase tracking-widest text-slate-500">
             <div class="p-3 text-center">Sun</div><div class="p-3 text-center">Mon</div><div class="p-3 text-center">Tue</div>
             <div class="p-3 text-center">Wed</div><div class="p-3 text-center">Thu</div><div class="p-3 text-center">Fri</div><div class="p-3 text-center">Sat</div>
           </div>
@@ -213,8 +244,8 @@
           <div class="p-5 sm:p-6 bg-slate-50 border-t border-slate-100">
             <div class="flex items-center justify-between mb-4">
               <div>
-                <h3 class="font-extrabold text-slate-900">Upcoming Launch Agenda</h3>
-                <p class="text-xs text-slate-500">Next scheduled starts in the selected period.</p>
+                <h3 id="calendarAgendaTitle" class="font-extrabold text-slate-900">Upcoming Launch Agenda</h3>
+                <p id="calendarAgendaSub" class="text-xs text-slate-500">Next scheduled starts in the selected period.</p>
               </div>
               <span id="calendarPeriodLabel" class="text-xs font-bold text-blue-700 bg-blue-50 px-3 py-1 rounded-full"></span>
             </div>
@@ -384,9 +415,14 @@
               <h3 class="text-xl font-extrabold text-slate-900">Achievement Badges</h3>
               <p class="text-sm text-slate-500">Milestone badges awarded automatically when quest criteria are met.</p>
             </div>
-            <button onclick="openBadgeModal()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl font-bold transition">
-              <i class="fas fa-plus mr-2"></i> New Badge
-            </button>
+            <div class="flex gap-2">
+              <button onclick="evaluateAchievements()" id="btnEvaluate" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl font-bold transition">
+                <i class="fas fa-bolt mr-2"></i> Evaluate All
+              </button>
+              <button onclick="openBadgeModal()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl font-bold transition">
+                <i class="fas fa-plus mr-2"></i> New Badge
+              </button>
+            </div>
           </div>
           <div id="badgeGrid" class="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"></div>
         </div>
@@ -418,6 +454,52 @@
           <h2 class="text-xl font-extrabold text-slate-900 mb-1">Strategic KPI Scorecard</h2>
           <p class="text-sm text-slate-500 mb-6">Management view across CASA, services, spending, risk, and social responsibility.</p>
           <div class="h-72"><canvas id="scorecardChart"></canvas></div>
+        </div>
+
+        <!-- Transaction Quest Success Rate (full-width) -->
+        <div class="xl:col-span-3 bg-white rounded-[1.7rem] border border-slate-200 shadow-sm overflow-hidden">
+          <div class="p-5 sm:p-6 border-b border-slate-100 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <h2 class="text-xl font-extrabold text-slate-900 flex items-center gap-2">
+                <span class="w-8 h-8 rounded-xl bg-amber-100 flex items-center justify-center"><i class="fas fa-receipt text-amber-600 text-sm"></i></span>
+                Transaction Quest Success Rates
+              </h2>
+              <p class="text-sm text-slate-500 mt-1 ml-10">Completion rates for CASA &amp; Spending quests mapped across customer segments from the data warehouse.</p>
+            </div>
+            <div id="txSummaryKpis" class="flex flex-wrap gap-3"></div>
+          </div>
+          <div class="grid grid-cols-1 xl:grid-cols-3 gap-0 divide-y xl:divide-y-0 xl:divide-x divide-slate-100">
+            <!-- Left: Per-quest horizontal bar chart -->
+            <div class="xl:col-span-2 p-5 sm:p-6">
+              <h3 class="text-sm font-extrabold text-slate-700 mb-4">Completion Rate per Quest</h3>
+              <div style="height:320px"><canvas id="txQuestChart"></canvas></div>
+            </div>
+            <!-- Right: Per-segment table -->
+            <div class="p-5 sm:p-6">
+              <h3 class="text-sm font-extrabold text-slate-700 mb-4">Success by Segment</h3>
+              <div id="txSegmentTable" class="space-y-3"></div>
+            </div>
+          </div>
+          <!-- Bottom: Top customer table -->
+          <div class="border-t border-slate-100 p-5 sm:p-6">
+            <h3 class="text-sm font-extrabold text-slate-700 mb-4">Top Performers in Transaction Quests</h3>
+            <div class="overflow-x-auto custom-scrollbar">
+              <table class="w-full text-left min-w-[680px]">
+                <thead class="bg-slate-50 text-[10px] uppercase tracking-widest text-slate-400 border-b border-slate-100">
+                  <tr>
+                    <th class="p-3">Rank</th>
+                    <th class="p-3">Customer</th>
+                    <th class="p-3">Segment</th>
+                    <th class="p-3">Tier</th>
+                    <th class="p-3">Completion</th>
+                    <th class="p-3">Quests Done</th>
+                    <th class="p-3">XP</th>
+                  </tr>
+                </thead>
+                <tbody id="txTopCustomers" class="divide-y divide-slate-100 text-sm"></tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </section>
 
